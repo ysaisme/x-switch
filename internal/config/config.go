@@ -225,3 +225,39 @@ func matchPattern(pattern, model string) bool {
 	}
 	return false
 }
+
+func (c *Config) UpdateSite(site Site) {
+	for i := range c.Sites {
+		if c.Sites[i].ID == site.ID {
+			c.Sites[i] = site
+			return
+		}
+	}
+}
+
+func (c *Config) DeleteSite(id string) {
+	for i := range c.Sites {
+		if c.Sites[i].ID == id {
+			c.Sites = append(c.Sites[:i], c.Sites[i+1:]...)
+			return
+		}
+	}
+}
+
+func (c *Config) FindProfile(name string) *Profile {
+	for i := range c.Routing.Profiles {
+		if c.Routing.Profiles[i].Name == name {
+			return &c.Routing.Profiles[i]
+		}
+	}
+	return nil
+}
+
+func (c *Config) DeleteProfile(name string) {
+	for i := range c.Routing.Profiles {
+		if c.Routing.Profiles[i].Name == name {
+			c.Routing.Profiles = append(c.Routing.Profiles[:i], c.Routing.Profiles[i+1:]...)
+			return
+		}
+	}
+}

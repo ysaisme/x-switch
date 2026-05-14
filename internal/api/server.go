@@ -14,10 +14,10 @@ import (
 )
 
 type Server struct {
-	router  *routing.Router
-	store   *store.Store
-	mux     *http.ServeMux
-	webFS   fs.FS
+	router *routing.Router
+	store  *store.Store
+	mux    *http.ServeMux
+	webFS  fs.FS
 }
 
 func NewServer(router *routing.Router, s *store.Store, webFS fs.FS) *Server {
@@ -35,8 +35,15 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/v1/routing/switch", s.handleRoutingSwitch)
 	s.mux.HandleFunc("/api/v1/routing/current", s.handleRoutingCurrent)
 	s.mux.HandleFunc("/api/v1/profiles", s.handleProfiles)
+	s.mux.HandleFunc("/api/v1/profiles/create", s.handleProfileCreate)
+	s.mux.HandleFunc("/api/v1/profiles/delete", s.handleProfileDelete)
+	s.mux.HandleFunc("/api/v1/profiles/rules/add", s.handleProfileRuleAdd)
+	s.mux.HandleFunc("/api/v1/profiles/rules/delete", s.handleProfileRuleDelete)
 	s.mux.HandleFunc("/api/v1/sites", s.handleSites)
 	s.mux.HandleFunc("/api/v1/sites/add", s.handleSiteAdd)
+	s.mux.HandleFunc("/api/v1/sites/update", s.handleSiteUpdate)
+	s.mux.HandleFunc("/api/v1/sites/delete", s.handleSiteDelete)
+	s.mux.HandleFunc("/api/v1/config", s.handleConfig)
 	s.mux.HandleFunc("/api/v1/config/reload", s.handleConfigReload)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/api/v1/logs", s.handleLogs)
@@ -110,26 +117,173 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleProfileCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	if cfg.FindProfile(req.Name) != nil {
+		writeError(w, http.StatusConflict, fmt.Sprintf("profile %s already exists", req.Name))
+		return
+	}
+
+	cfg.Routing.Profiles = append(cfg.Routing.Profiles, config.Profile{
+		Name:  req.Name,
+		Rules: []config.Rule{},
+	})
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config failed")
+		return
+	}
+	s.router.UpdateConfig(cfg)
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"success": true, "profile": req.Name})
+}
+
+func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	if cfg.FindProfile(req.Name) == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("profile %s not found", req.Name))
+		return
+	}
+	if cfg.Routing.ActiveProfile == req.Name {
+		writeError(w, http.StatusBadRequest, "cannot delete active profile")
+		return
+	}
+	if len(cfg.Routing.Profiles) <= 1 {
+		writeError(w, http.StatusBadRequest, "cannot delete the last profile")
+		return
+	}
+
+	cfg.DeleteProfile(req.Name)
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config failed")
+		return
+	}
+	s.router.UpdateConfig(cfg)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+func (s *Server) handleProfileRuleAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Profile      string `json:"profile"`
+		ModelPattern string `json:"model_pattern"`
+		Site         string `json:"site"`
+		Fallback     string `json:"fallback,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Profile == "" || req.ModelPattern == "" || req.Site == "" {
+		writeError(w, http.StatusBadRequest, "profile, model_pattern, and site are required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	profile := cfg.FindProfile(req.Profile)
+	if profile == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("profile %s not found", req.Profile))
+		return
+	}
+	if cfg.FindSite(req.Site) == nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("site %s not found", req.Site))
+		return
+	}
+
+	profile.Rules = append(profile.Rules, config.Rule{
+		ModelPattern: req.ModelPattern,
+		Site:         req.Site,
+		Fallback:     req.Fallback,
+	})
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config failed")
+		return
+	}
+	s.router.UpdateConfig(cfg)
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"success": true})
+}
+
+func (s *Server) handleProfileRuleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Profile string `json:"profile"`
+		Index   int    `json:"index"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Profile == "" {
+		writeError(w, http.StatusBadRequest, "profile is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	profile := cfg.FindProfile(req.Profile)
+	if profile == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("profile %s not found", req.Profile))
+		return
+	}
+	if req.Index < 0 || req.Index >= len(profile.Rules) {
+		writeError(w, http.StatusBadRequest, "invalid rule index")
+		return
+	}
+
+	profile.Rules = append(profile.Rules[:req.Index], profile.Rules[req.Index+1:]...)
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config failed")
+		return
+	}
+	s.router.UpdateConfig(cfg)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
 func (s *Server) handleSites(w http.ResponseWriter, r *http.Request) {
 	cfg := s.router.GetConfig()
 
-	type SiteView struct {
-		ID       string   `json:"id"`
-		Name     string   `json:"name"`
-		BaseURL  string   `json:"base_url"`
-		Protocol string   `json:"protocol"`
-		Models   []string `json:"models"`
-	}
-
-	var sites []SiteView
+	var sites []config.Site
 	for _, site := range cfg.Sites {
-		sites = append(sites, SiteView{
-			ID:       site.ID,
-			Name:     site.Name,
-			BaseURL:  site.BaseURL,
-			Protocol: site.Protocol,
-			Models:   site.Models,
-		})
+		sites = append(sites, site)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -173,6 +327,161 @@ func (s *Server) handleSiteAdd(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"site_id": site.ID,
 	})
+}
+
+func (s *Server) handleSiteUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var site config.Site
+	if err := json.NewDecoder(r.Body).Decode(&site); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if site.ID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	existing := cfg.FindSite(site.ID)
+	if existing == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("site %s not found", site.ID))
+		return
+	}
+
+	if site.Name == "" {
+		site.Name = existing.Name
+	}
+	if site.BaseURL == "" {
+		site.BaseURL = existing.BaseURL
+	}
+	if site.APIKey == "" {
+		site.APIKey = existing.APIKey
+	}
+	if site.Protocol == "" {
+		site.Protocol = existing.Protocol
+	}
+	if site.Models == nil {
+		site.Models = existing.Models
+	}
+
+	cfg.UpdateSite(site)
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config failed")
+		return
+	}
+	s.router.UpdateConfig(cfg)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+func (s *Server) handleSiteDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	if cfg.FindSite(req.ID) == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("site %s not found", req.ID))
+		return
+	}
+
+	cfg.DeleteSite(req.ID)
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config failed")
+		return
+	}
+	s.router.UpdateConfig(cfg)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := s.router.GetConfig()
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"proxy":    cfg.Proxy,
+			"security": cfg.Security,
+			"logging":  cfg.Logging,
+		})
+
+	case http.MethodPatch:
+		var updates map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		cfg := s.router.GetConfig()
+
+		if proxy, ok := updates["proxy"].(map[string]interface{}); ok {
+			if listen, ok := proxy["listen"].(string); ok && listen != "" {
+				cfg.Proxy.Listen = listen
+			}
+			if webListen, ok := proxy["web_listen"].(string); ok && webListen != "" {
+				cfg.Proxy.WebListen = webListen
+			}
+		}
+
+		if security, ok := updates["security"].(map[string]interface{}); ok {
+			if token, ok := security["access_token"].(string); ok {
+				cfg.Security.AccessToken = token
+			}
+			if ips, ok := security["allowed_ips"].([]interface{}); ok {
+				var newIPs []string
+				for _, ip := range ips {
+					if s, ok := ip.(string); ok {
+						newIPs = append(newIPs, s)
+					}
+				}
+				cfg.Security.AllowedIPs = newIPs
+			}
+			if rl, ok := security["rate_limit"].(map[string]interface{}); ok {
+				if rpm, ok := rl["global_rpm"].(float64); ok {
+					cfg.Security.RateLimit.GlobalRPM = int(rpm)
+				}
+			}
+		}
+
+		if logging, ok := updates["logging"].(map[string]interface{}); ok {
+			if enabled, ok := logging["enabled"].(bool); ok {
+				cfg.Logging.Enabled = enabled
+			}
+			if maxDays, ok := logging["max_days"].(float64); ok {
+				cfg.Logging.MaxDays = int(maxDays)
+			}
+			if logBody, ok := logging["log_body"].(bool); ok {
+				cfg.Logging.LogBody = logBody
+			}
+		}
+
+		if err := config.Save(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, "save config failed")
+			return
+		}
+		s.router.UpdateConfig(cfg)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleConfigReload(w http.ResponseWriter, r *http.Request) {

@@ -17,7 +17,9 @@ export interface Site {
   name: string;
   base_url: string;
   protocol: string;
+  api_key: string;
   models: string[];
+  balance_api?: string;
 }
 
 export interface Rule {
@@ -61,6 +63,17 @@ export interface Stats {
   total_cost: number;
 }
 
+export interface AppConfig {
+  proxy: { listen: string; web_listen: string };
+  security: {
+    api_key_encryption: boolean;
+    access_token: string;
+    allowed_ips: string[];
+    rate_limit: { global_rpm: number; per_site_rpm: Record<string, number> };
+  };
+  logging: { enabled: boolean; max_days: number; log_body: boolean };
+}
+
 export const api = {
   getRoutingCurrent: () => request<RoutingCurrent>('/api/v1/routing/current'),
   getSites: () => request<{ sites: Site[] }>('/api/v1/sites').then(r => r.sites),
@@ -84,10 +97,46 @@ export const api = {
     request<{ logs: RequestLog[] }>(`/api/v1/logs${params ? '?' + params : ''}`).then(r => r.logs),
   getStats: (days?: number) =>
     request<Stats>(`/api/v1/stats${days ? '?days=' + days : ''}`),
-  addSite: (site: Partial<Site> & { api_key: string }) =>
+  addSite: (site: Partial<Site> & { id: string; api_key: string }) =>
     request<{ success: boolean; site_id: string }>('/api/v1/sites/add', {
       method: 'POST',
       body: JSON.stringify(site),
+    }),
+  updateSite: (site: Site) =>
+    request<{ success: boolean }>('/api/v1/sites/update', {
+      method: 'POST',
+      body: JSON.stringify(site),
+    }),
+  deleteSite: (id: string) =>
+    request<{ success: boolean }>('/api/v1/sites/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+  createProfile: (name: string) =>
+    request<{ success: boolean }>('/api/v1/profiles/create', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  deleteProfile: (name: string) =>
+    request<{ success: boolean }>('/api/v1/profiles/delete', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  addProfileRule: (profile: string, rule: Rule) =>
+    request<{ success: boolean }>('/api/v1/profiles/rules/add', {
+      method: 'POST',
+      body: JSON.stringify({ profile, ...rule }),
+    }),
+  deleteProfileRule: (profile: string, index: number) =>
+    request<{ success: boolean }>('/api/v1/profiles/rules/delete', {
+      method: 'POST',
+      body: JSON.stringify({ profile, index }),
+    }),
+  getConfig: () => request<AppConfig>('/api/v1/config'),
+  updateConfig: (updates: Partial<AppConfig>) =>
+    request<{ success: boolean }>('/api/v1/config', {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
     }),
   reloadConfig: () =>
     request<{ success: boolean }>('/api/v1/config/reload', { method: 'POST' }),
