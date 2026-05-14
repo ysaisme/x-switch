@@ -60,6 +60,7 @@ app: build-all
 	@chmod +x build/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)
 	@chmod +x build/$(APP_NAME).app/Contents/Resources/mswitch
 	@codesign --force --deep --sign - build/$(APP_NAME).app
+	@xattr -cr build/$(APP_NAME).app
 	@echo "built build/$(APP_NAME).app"
 
 dmg: app
@@ -69,6 +70,7 @@ dmg: app
 	@cp -R build/$(APP_NAME).app build/dmg_temp/
 	@ln -sf /Applications build/dmg_temp/Applications
 	@hdiutil create -volname "$(APP_NAME)" -srcfolder build/dmg_temp -ov -format UDZO build/$(APP_NAME).dmg
+	@xattr -cr build/$(APP_NAME).dmg
 	@rm -rf build/dmg_temp
 	@echo "built build/$(APP_NAME).dmg ($(shell ls -lh build/$(APP_NAME).dmg | awk '{print $$5}'))"
 
