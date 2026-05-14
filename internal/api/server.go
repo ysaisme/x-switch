@@ -281,9 +281,9 @@ func (s *Server) handleProfileRuleDelete(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleSites(w http.ResponseWriter, r *http.Request) {
 	cfg := s.router.GetConfig()
 
-	var sites []config.Site
-	for _, site := range cfg.Sites {
-		sites = append(sites, site)
+	sites := cfg.Sites
+	if sites == nil {
+		sites = []config.Site{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

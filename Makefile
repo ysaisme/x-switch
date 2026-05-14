@@ -53,12 +53,13 @@ app: build-all
 	@rm -rf build/$(APP_NAME).app
 	@mkdir -p build/$(APP_NAME).app/Contents/MacOS
 	@mkdir -p build/$(APP_NAME).app/Contents/Resources
-	@cp scripts/launcher.sh build/$(APP_NAME).app/Contents/MacOS/launcher
+	@clang -o build/$(APP_NAME).app/Contents/MacOS/$(APP_NAME) scripts/App.m -framework Cocoa -framework WebKit -fobjc-arc
 	@cp bin/mswitch build/$(APP_NAME).app/Contents/Resources/mswitch
 	@cp scripts/icon.icns build/$(APP_NAME).app/Contents/Resources/icon.icns
 	@sed -e 's/{{VERSION}}/$(APP_VERSION)/g' scripts/Info.plist > build/$(APP_NAME).app/Contents/Info.plist
-	@chmod +x build/$(APP_NAME).app/Contents/MacOS/launcher
+	@chmod +x build/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)
 	@chmod +x build/$(APP_NAME).app/Contents/Resources/mswitch
+	@codesign --force --deep --sign - build/$(APP_NAME).app
 	@echo "built build/$(APP_NAME).app"
 
 dmg: app

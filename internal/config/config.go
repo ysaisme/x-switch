@@ -10,60 +10,60 @@ import (
 )
 
 type Config struct {
-	Sites    []Site    `yaml:"sites"`
-	Routing  Routing   `yaml:"routing"`
-	Proxy    Proxy     `yaml:"proxy"`
-	Security Security  `yaml:"security"`
-	Logging  Logging   `yaml:"logging"`
+	Sites    []Site    `yaml:"sites" json:"sites"`
+	Routing  Routing   `yaml:"routing" json:"routing"`
+	Proxy    Proxy     `yaml:"proxy" json:"proxy"`
+	Security Security  `yaml:"security" json:"security"`
+	Logging  Logging   `yaml:"logging" json:"logging"`
 }
 
 type Site struct {
-	ID        string   `yaml:"id"`
-	Name      string   `yaml:"name"`
-	BaseURL   string   `yaml:"base_url"`
-	Protocol  string   `yaml:"protocol"`
-	APIKey    string   `yaml:"api_key"`
-	Models    []string `yaml:"models"`
-	BalanceAPI string  `yaml:"balance_api,omitempty"`
+	ID         string   `yaml:"id" json:"id"`
+	Name       string   `yaml:"name" json:"name"`
+	BaseURL    string   `yaml:"base_url" json:"base_url"`
+	Protocol   string   `yaml:"protocol" json:"protocol"`
+	APIKey     string   `yaml:"api_key" json:"api_key"`
+	Models     []string `yaml:"models" json:"models"`
+	BalanceAPI string   `yaml:"balance_api,omitempty" json:"balance_api,omitempty"`
 }
 
 type Routing struct {
-	ActiveProfile string     `yaml:"active_profile"`
-	Profiles      []Profile  `yaml:"profiles"`
+	ActiveProfile string    `yaml:"active_profile" json:"active_profile"`
+	Profiles      []Profile `yaml:"profiles" json:"profiles"`
 }
 
 type Profile struct {
-	Name  string `yaml:"name"`
-	Rules []Rule `yaml:"rules"`
+	Name  string `yaml:"name" json:"name"`
+	Rules []Rule `yaml:"rules" json:"rules"`
 }
 
 type Rule struct {
-	ModelPattern string `yaml:"model_pattern"`
-	Site         string `yaml:"site"`
-	Fallback     string `yaml:"fallback,omitempty"`
+	ModelPattern string `yaml:"model_pattern" json:"model_pattern"`
+	Site         string `yaml:"site" json:"site"`
+	Fallback     string `yaml:"fallback,omitempty" json:"fallback,omitempty"`
 }
 
 type Proxy struct {
-	Listen    string `yaml:"listen"`
-	WebListen string `yaml:"web_listen"`
+	Listen    string `yaml:"listen" json:"listen"`
+	WebListen string `yaml:"web_listen" json:"web_listen"`
 }
 
 type Security struct {
-	APIKeyEncryption bool      `yaml:"api_key_encryption"`
-	AccessToken      string    `yaml:"access_token"`
-	AllowedIPs       []string  `yaml:"allowed_ips,omitempty"`
-	RateLimit        RateLimit `yaml:"rate_limit"`
+	APIKeyEncryption bool      `yaml:"api_key_encryption" json:"api_key_encryption"`
+	AccessToken      string    `yaml:"access_token" json:"access_token"`
+	AllowedIPs       []string  `yaml:"allowed_ips,omitempty" json:"allowed_ips,omitempty"`
+	RateLimit        RateLimit `yaml:"rate_limit" json:"rate_limit"`
 }
 
 type RateLimit struct {
-	GlobalRPM  int            `yaml:"global_rpm"`
-	PerSiteRPM map[string]int `yaml:"per_site_rpm,omitempty"`
+	GlobalRPM  int            `yaml:"global_rpm" json:"global_rpm"`
+	PerSiteRPM map[string]int `yaml:"per_site_rpm,omitempty" json:"per_site_rpm,omitempty"`
 }
 
 type Logging struct {
-	Enabled bool   `yaml:"enabled"`
-	MaxDays int    `yaml:"max_days"`
-	LogBody bool   `yaml:"log_body"`
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	MaxDays int    `yaml:"max_days" json:"max_days"`
+	LogBody bool   `yaml:"log_body" json:"log_body"`
 }
 
 var (
