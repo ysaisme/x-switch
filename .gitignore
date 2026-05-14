@@ -1,0 +1,11 @@
+bin/
+release/
+web_dist/
+cmd/mswitch/web_dist/
+web/node_modules/
+web/dist/
+*.exe
+*.test
+.DS_Store
+mswitch.pid
+*.db
