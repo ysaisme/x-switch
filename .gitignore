@@ -1,4 +1,5 @@
 bin/
+build/
 release/
 web_dist/
 cmd/mswitch/web_dist/

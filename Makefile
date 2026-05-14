@@ -1,8 +1,10 @@
-.PHONY: build build-web build-all run clean tidy test install release
+.PHONY: build build-web build-all run clean tidy test install release app dmg dev
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS = -s -w -X main.version=$(VERSION)
 GO ?= $(HOME)/.local/go/bin/go
+APP_NAME = mswitch
+APP_VERSION = $(shell echo $(VERSION) | sed 's/^v//')
 
 build-web:
 	cd web && npm run build
@@ -20,7 +22,7 @@ run: build
 	./bin/mswitch start
 
 clean:
-	rm -rf bin/ web_dist/ cmd/mswitch/web_dist
+	rm -rf bin/ web_dist/ cmd/mswitch/web_dist build/ release/
 
 tidy:
 	$(GO) mod tidy
@@ -45,6 +47,29 @@ release: build-web
 			-o release/mswitch-$(VERSION)-$$GOOS-$$GOARCH$$ext ./cmd/mswitch; \
 	done
 	@echo "release builds done in release/"
+
+app: build-all
+	@echo "building $(APP_NAME).app..."
+	@rm -rf build/$(APP_NAME).app
+	@mkdir -p build/$(APP_NAME).app/Contents/MacOS
+	@mkdir -p build/$(APP_NAME).app/Contents/Resources
+	@cp scripts/launcher.sh build/$(APP_NAME).app/Contents/MacOS/launcher
+	@cp bin/mswitch build/$(APP_NAME).app/Contents/Resources/mswitch
+	@cp scripts/icon.icns build/$(APP_NAME).app/Contents/Resources/icon.icns
+	@sed -e 's/{{VERSION}}/$(APP_VERSION)/g' scripts/Info.plist > build/$(APP_NAME).app/Contents/Info.plist
+	@chmod +x build/$(APP_NAME).app/Contents/MacOS/launcher
+	@chmod +x build/$(APP_NAME).app/Contents/Resources/mswitch
+	@echo "built build/$(APP_NAME).app"
+
+dmg: app
+	@echo "building $(APP_NAME).dmg..."
+	@rm -f build/$(APP_NAME).dmg
+	@mkdir -p build/dmg_temp
+	@cp -R build/$(APP_NAME).app build/dmg_temp/
+	@ln -sf /Applications build/dmg_temp/Applications
+	@hdiutil create -volname "$(APP_NAME)" -srcfolder build/dmg_temp -ov -format UDZO build/$(APP_NAME).dmg
+	@rm -rf build/dmg_temp
+	@echo "built build/$(APP_NAME).dmg ($(shell ls -lh build/$(APP_NAME).dmg | awk '{print $$5}'))"
 
 dev:
 	cd web && npm run dev
