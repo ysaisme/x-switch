@@ -139,7 +139,7 @@ func (s *Store) QueryLogs(filter LogFilter) ([]RequestLog, error) {
 	}
 	defer rows.Close()
 
-	var logs []RequestLog
+	logs := []RequestLog{}
 	for rows.Next() {
 		var l RequestLog
 		var ts string

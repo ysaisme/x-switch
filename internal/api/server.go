@@ -530,6 +530,10 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if logs == nil {
+		logs = []store.RequestLog{}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"logs": logs,
 	})
