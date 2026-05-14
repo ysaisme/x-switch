@@ -294,8 +294,8 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
                 disabled={switching}
                 className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
                   site.id === activeSite
-                    ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] ring-1 ring-current/20'
-                    : 'bg-[var(--accent-blue)] hover:opacity-90 text-white'
+                    ? 'bg-[var(--accent-blue)] text-white'
+                    : 'bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:bg-[var(--bg-hover)]'
                 } disabled:opacity-40`}
               >
                 {site.name}
@@ -314,8 +314,8 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
                 disabled={switching}
                 className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
                   routing?.active_profile === p.name
-                    ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] ring-1 ring-current/20'
-                    : 'bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'
+                    ? 'bg-[var(--accent-blue)] text-white'
+                    : 'bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:bg-[var(--bg-hover)]'
                 } disabled:opacity-40`}
               >
                 {p.name} ({p.rules.length} 规则)
