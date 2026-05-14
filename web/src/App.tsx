@@ -212,6 +212,8 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
   const [newRule, setNewRule] = useState({ model_pattern: '', site: '', fallback: '' });
   const [selectedProfile, setSelectedProfile] = useState('');
 
+  const activeSite = routing?.profile?.rules?.find((r: Rule) => r.model_pattern === '*')?.site || '';
+
   const handleSwitch = async (type: 'profile' | 'site', value: string) => {
     try {
       setSwitching(true);
@@ -290,7 +292,11 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
                 key={site.id}
                 onClick={() => handleSwitch('site', site.id)}
                 disabled={switching}
-                className="px-4 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 disabled:opacity-40 rounded-xl text-sm text-white transition-colors"
+                className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
+                  site.id === activeSite
+                    ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] ring-1 ring-current/20'
+                    : 'bg-[var(--accent-blue)] hover:opacity-90 text-white'
+                } disabled:opacity-40`}
               >
                 {site.name}
               </button>
