@@ -1,11 +1,16 @@
 #!/bin/bash
 set -e
 
-APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RESOURCES_DIR="$APP_DIR/Contents/Resources"
+CONTENTS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
 MSWITCH_BIN="$RESOURCES_DIR/mswitch"
 PID_FILE="$HOME/.mswitch/mswitch.pid"
 WEB_URL="http://127.0.0.1:9091"
+
+if [ ! -x "$MSWITCH_BIN" ]; then
+    osascript -e 'display dialog "mswitch binary not found.\n\nExpected: '"$MSWITCH_BIN"'" buttons {"OK"} default button 1 with title "mswitch Error" with icon stop'
+    exit 1
+fi
 
 cleanup() {
     echo "[mswitch] shutting down..."
@@ -29,11 +34,6 @@ if [ -f "$PID_FILE" ]; then
         exit 0
     fi
     rm -f "$PID_FILE"
-fi
-
-if [ ! -x "$MSWITCH_BIN" ]; then
-    osascript -e 'display dialog "mswitch binary not found in app bundle." buttons {"OK"} default button 1 with title "mswitch Error" with icon stop'
-    exit 1
 fi
 
 CONFIG_DIR="$HOME/.mswitch"
