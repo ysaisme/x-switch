@@ -56,6 +56,7 @@ app: build-all
 	@clang -o build/$(APP_NAME).app/Contents/MacOS/$(APP_NAME) scripts/App.m -framework Cocoa -framework WebKit -fobjc-arc
 	@cp bin/mswitch build/$(APP_NAME).app/Contents/Resources/mswitch
 	@cp scripts/icon.icns build/$(APP_NAME).app/Contents/Resources/icon.icns
+	@cp scripts/icon-menu.png build/$(APP_NAME).app/Contents/Resources/icon-menu.png
 	@sed -e 's/{{VERSION}}/$(APP_VERSION)/g' scripts/Info.plist > build/$(APP_NAME).app/Contents/Info.plist
 	@chmod +x build/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)
 	@chmod +x build/$(APP_NAME).app/Contents/Resources/mswitch

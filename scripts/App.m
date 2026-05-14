@@ -49,26 +49,25 @@
 }
 
 - (NSImage *)statusBarIcon {
-    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(20, 20)];
-    [image lockFocus];
-
-    NSBezierPath *circle = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(2, 2, 16, 16)];
-    [[NSColor blackColor] setFill];
-    [circle fill];
-
-    NSDictionary *attrs = @{
-        NSFontAttributeName: [NSFont boldSystemFontOfSize:11],
-        NSForegroundColorAttributeName: [NSColor whiteColor]
-    };
-    NSAttributedString *text = [[NSAttributedString alloc] initWithString:@"M" attributes:attrs];
-    NSSize textSize = text.size;
-    NSPoint textPoint = NSMakePoint(
-        (20 - textSize.width) / 2,
-        (20 - textSize.height) / 2
-    );
-    [text drawAtPoint:textPoint];
-
-    [image unlockFocus];
+    NSString *iconPath = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"icon-menu.png"];
+    NSImage *image = [[NSImage alloc] initWithContentsOfFile:iconPath];
+    if (!image) {
+        image = [[NSImage alloc] initWithSize:NSMakeSize(20, 20)];
+        [image lockFocus];
+        NSBezierPath *circle = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(2, 2, 16, 16)];
+        [[NSColor blackColor] setFill];
+        [circle fill];
+        NSDictionary *attrs = @{
+            NSFontAttributeName: [NSFont boldSystemFontOfSize:11],
+            NSForegroundColorAttributeName: [NSColor whiteColor]
+        };
+        NSAttributedString *text = [[NSAttributedString alloc] initWithString:@"M" attributes:attrs];
+        NSSize textSize = text.size;
+        NSPoint textPoint = NSMakeRect(0, 0, 20, 20).origin;
+        textPoint = NSMakePoint((20 - textSize.width) / 2, (20 - textSize.height) / 2);
+        [text drawAtPoint:textPoint];
+        [image unlockFocus];
+    }
     image.template = YES;
     return image;
 }
