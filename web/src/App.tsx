@@ -1,8 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/client';
 import type { RoutingCurrent, Site, Profile, Rule, Stats, RequestLog, AppConfig } from './api/client';
 
 type Page = 'dashboard' | 'switch' | 'sites' | 'logs' | 'stats' | 'settings';
+type Theme = 'light' | 'dark' | 'system';
+
+function getEffectiveTheme(theme: Theme): 'light' | 'dark' {
+  if (theme === 'system') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return theme;
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard');
@@ -11,6 +19,26 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [theme, setTheme] = useState<Theme>(() => {
+    return (localStorage.getItem('mswitch-theme') as Theme) || 'system';
+  });
+
+  const applyTheme = useCallback((t: Theme) => {
+    const effective = getEffectiveTheme(t);
+    document.documentElement.classList.toggle('dark', effective === 'dark');
+  }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+    localStorage.setItem('mswitch-theme', theme);
+
+    if (theme === 'system') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const handler = () => applyTheme('system');
+      mq.addEventListener('change', handler);
+      return () => mq.removeEventListener('change', handler);
+    }
+  }, [theme, applyTheme]);
 
   const refresh = async () => {
     try {
@@ -43,11 +71,11 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-[#0a0a0f] text-gray-100">
-      <nav className="w-56 bg-white/[0.03] backdrop-blur-sm flex flex-col shrink-0 border-r border-white/[0.06]">
+    <div className="flex h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
+      <nav className="w-56 bg-[var(--bg-sidebar)] backdrop-blur-sm flex flex-col shrink-0 border-r border-[var(--border-subtle)]">
         <div className="p-5 pb-4">
-          <h1 className="text-xl font-semibold text-white tracking-tight">mswitch</h1>
-          <p className="text-xs text-white/30 mt-1.5">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">mswitch</h1>
+          <p className="text-xs text-[var(--text-muted)] mt-1.5">
             {routing ? routing.active_profile : 'loading...'}
           </p>
         </div>
@@ -58,8 +86,8 @@ export default function App() {
               onClick={() => setPage(item.key)}
               className={`w-full text-left px-3.5 py-2.5 text-sm rounded-xl transition-all ${
                 page === item.key
-                  ? 'bg-white/[0.08] text-white font-medium'
-                  : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
+                  ? 'bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card)]'
               }`}
             >
               {item.label}
@@ -69,7 +97,7 @@ export default function App() {
         <div className="p-3">
           <button
             onClick={refresh}
-            className="w-full px-3 py-2 text-xs text-white/30 hover:text-white/60 hover:bg-white/[0.04] rounded-xl transition-all"
+            className="w-full px-3 py-2 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card)] rounded-xl transition-all"
           >
             刷新
           </button>
@@ -78,13 +106,13 @@ export default function App() {
 
       <main className="flex-1 overflow-auto">
         {error && (
-          <div className="m-6 p-4 bg-red-500/10 rounded-2xl text-red-400 text-sm">
+          <div className="m-6 p-4 bg-[var(--accent-red-bg)] rounded-2xl text-[var(--accent-red-text)] text-sm">
             {error}
           </div>
         )}
 
         {loading && !routing ? (
-          <div className="flex items-center justify-center h-full text-white/20">加载中...</div>
+          <div className="flex items-center justify-center h-full text-[var(--text-muted)]">加载中...</div>
         ) : (
           <>
             {page === 'dashboard' && <DashboardPage routing={routing} sites={sites} onAddSite={() => setPage('sites')} />}
@@ -92,7 +120,7 @@ export default function App() {
             {page === 'sites' && <SitesPage sites={sites} onRefresh={refresh} />}
             {page === 'logs' && <LogsPage />}
             {page === 'stats' && <StatsPage />}
-            {page === 'settings' && <SettingsPage />}
+            {page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} />}
           </>
         )}
       </main>
@@ -112,19 +140,19 @@ function DashboardPage({ routing, sites, onAddSite }: { routing: RoutingCurrent 
       </div>
 
       <div>
-        <h3 className="text-base font-medium mb-4 text-white/70">站点列表</h3>
+        <h3 className="text-base font-medium mb-4 text-[var(--text-secondary)]">站点列表</h3>
         {sites.length > 0 ? (
         <div className="grid grid-cols-2 gap-4">
           {sites.map(site => (
-            <div key={site.id} className="bg-white/[0.04] rounded-2xl p-5 hover:bg-white/[0.06] transition-colors">
+            <div key={site.id} className="bg-[var(--bg-card)] rounded-2xl p-5 hover:bg-[var(--bg-hover)] transition-colors">
               <div className="flex items-center justify-between mb-3">
                 <span className="font-medium">{site.name}</span>
-                <span className="text-xs px-2.5 py-1 bg-white/[0.06] rounded-lg">{site.protocol}</span>
+                <span className="text-xs px-2.5 py-1 bg-[var(--bg-input)] rounded-lg">{site.protocol}</span>
               </div>
-              <p className="text-xs text-white/30 mb-3">{site.base_url}</p>
+              <p className="text-xs text-[var(--text-muted)] mb-3">{site.base_url}</p>
               <div className="flex flex-wrap gap-1.5">
                 {site.models.map((m: string) => (
-                  <span key={m} className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-lg">
+                  <span key={m} className="text-xs px-2 py-0.5 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] rounded-lg">
                     {m}
                   </span>
                 ))}
@@ -133,11 +161,11 @@ function DashboardPage({ routing, sites, onAddSite }: { routing: RoutingCurrent 
           ))}
         </div>
         ) : (
-          <div className="bg-white/[0.02] border border-dashed border-white/10 rounded-2xl p-10 text-center">
-            <p className="text-white/30 mb-4">还没有添加任何 API 站点</p>
+          <div className="bg-[var(--bg-card)] border border-dashed border-[var(--dashed-border)] rounded-2xl p-10 text-center">
+            <p className="text-[var(--text-muted)] mb-4">还没有添加任何 API 站点</p>
             <button
               onClick={onAddSite}
-              className="px-5 py-2.5 bg-blue-500 hover:bg-blue-400 rounded-xl text-sm transition-colors"
+              className="px-5 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 rounded-xl text-sm text-white transition-colors"
             >
               添加第一个站点
             </button>
@@ -146,26 +174,26 @@ function DashboardPage({ routing, sites, onAddSite }: { routing: RoutingCurrent 
       </div>
 
       <div>
-        <h3 className="text-base font-medium mb-4 text-white/70">当前路由</h3>
-        <div className="bg-white/[0.04] rounded-2xl overflow-hidden">
+        <h3 className="text-base font-medium mb-4 text-[var(--text-secondary)]">当前路由</h3>
+        <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/[0.06]">
-                <th className="text-left px-5 py-3 text-white/30 font-medium">模型匹配</th>
-                <th className="text-left px-5 py-3 text-white/30 font-medium">目标站点</th>
-                <th className="text-left px-5 py-3 text-white/30 font-medium">Fallback</th>
+              <tr className="border-b border-[var(--border-subtle)]">
+                <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">模型匹配</th>
+                <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">目标站点</th>
+                <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">Fallback</th>
               </tr>
             </thead>
             <tbody>
               {routing?.profile?.rules?.map((rule: Rule, i: number) => (
-                <tr key={i} className="border-b border-white/[0.03]">
-                  <td className="px-5 py-3 font-mono text-blue-400">{rule.model_pattern}</td>
+                <tr key={i} className="border-b border-[var(--border-subtle)]">
+                  <td className="px-5 py-3 font-mono text-[var(--accent-blue-text)]">{rule.model_pattern}</td>
                   <td className="px-5 py-3">{rule.site}</td>
-                  <td className="px-5 py-3 text-white/30">{rule.fallback || '-'}</td>
+                  <td className="px-5 py-3 text-[var(--text-muted)]">{rule.fallback || '-'}</td>
                 </tr>
               ))}
               {(!routing?.profile?.rules?.length) && (
-                <tr><td colSpan={3} className="px-5 py-6 text-center text-white/20">无路由规则</td></tr>
+                <tr><td colSpan={3} className="px-5 py-6 text-center text-[var(--text-muted)]">无路由规则</td></tr>
               )}
             </tbody>
           </table>
@@ -249,20 +277,20 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
       <h2 className="text-2xl font-semibold tracking-tight">切换中心</h2>
 
       {msg && (
-        <div className="p-4 bg-blue-500/10 rounded-2xl text-blue-400 text-sm">{msg}</div>
+        <div className="p-4 bg-[var(--accent-blue-bg)] rounded-2xl text-[var(--accent-blue-text)] text-sm">{msg}</div>
       )}
 
       <div className="space-y-5">
-        <div className="bg-white/[0.04] rounded-2xl p-5">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5">
           <h3 className="font-medium mb-2">快速切换站点</h3>
-          <p className="text-sm text-white/30 mb-4">将所有请求路由到指定站点</p>
+          <p className="text-sm text-[var(--text-muted)] mb-4">将所有请求路由到指定站点</p>
           <div className="flex flex-wrap gap-2.5">
             {sites.map(site => (
               <button
                 key={site.id}
                 onClick={() => handleSwitch('site', site.id)}
                 disabled={switching}
-                className="px-4 py-2.5 bg-blue-500 hover:bg-blue-400 disabled:opacity-40 rounded-xl text-sm transition-colors"
+                className="px-4 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 disabled:opacity-40 rounded-xl text-sm text-white transition-colors"
               >
                 {site.name}
               </button>
@@ -270,7 +298,7 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
           </div>
         </div>
 
-        <div className="bg-white/[0.04] rounded-2xl p-5">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5">
           <h3 className="font-medium mb-3">切换 Profile</h3>
           <div className="flex flex-wrap gap-2.5">
             {profiles.map(p => (
@@ -280,8 +308,8 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
                 disabled={switching}
                 className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
                   routing?.active_profile === p.name
-                    ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30'
-                    : 'bg-white/[0.06] hover:bg-white/[0.1] text-white/60'
+                    ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] ring-1 ring-current/20'
+                    : 'bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'
                 } disabled:opacity-40`}
               >
                 {p.name} ({p.rules.length} 规则)
@@ -290,29 +318,29 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
           </div>
         </div>
 
-        <div className="bg-white/[0.04] rounded-2xl p-5 space-y-5">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-5">
           <h3 className="font-medium">Profile 管理</h3>
 
           <div className="flex gap-3 items-end">
             <div className="flex-1">
               <Input label="新 Profile 名称" value={newProfileName} onChange={setNewProfileName} placeholder="production" />
             </div>
-            <button onClick={handleCreateProfile} className="px-5 py-2.5 bg-green-500 hover:bg-green-400 rounded-xl text-sm transition-colors">
+            <button onClick={handleCreateProfile} className="px-5 py-2.5 bg-green-500 hover:bg-green-400 rounded-xl text-sm text-white transition-colors">
               创建
             </button>
           </div>
 
           {profiles.map(p => (
-            <div key={p.name} className="bg-white/[0.03] rounded-xl p-4 space-y-3">
+            <div key={p.name} className="bg-[var(--bg-sidebar)] rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{p.name}</span>
                 <div className="flex gap-2">
                   {routing?.active_profile === p.name && (
-                    <span className="text-xs px-2.5 py-1 bg-green-500/10 text-green-400 rounded-lg">活跃</span>
+                    <span className="text-xs px-2.5 py-1 bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] rounded-lg">活跃</span>
                   )}
                   <button
                     onClick={() => handleDeleteProfile(p.name)}
-                    className="text-xs px-2.5 py-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors"
+                    className="text-xs px-2.5 py-1 bg-[var(--accent-red-bg)] text-[var(--accent-red-text)] hover:opacity-80 rounded-lg transition-colors"
                   >
                     删除
                   </button>
@@ -321,25 +349,25 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
 
               {p.rules.map((rule: Rule, idx: number) => (
                 <div key={idx} className="flex items-center gap-2 text-sm pl-4">
-                  <span className="font-mono text-blue-400">{rule.model_pattern}</span>
-                  <span className="text-white/20">{'→'}</span>
-                  <span className="px-2.5 py-0.5 bg-white/[0.06] rounded-lg">{rule.site}</span>
+                  <span className="font-mono text-[var(--accent-blue-text)]">{rule.model_pattern}</span>
+                  <span className="text-[var(--text-muted)]">{'→'}</span>
+                  <span className="px-2.5 py-0.5 bg-[var(--bg-input)] rounded-lg">{rule.site}</span>
                   {rule.fallback && (
                     <>
-                      <span className="text-white/20">fallback:</span>
-                      <span className="px-2.5 py-0.5 bg-white/[0.06] rounded-lg">{rule.fallback}</span>
+                      <span className="text-[var(--text-muted)]">fallback:</span>
+                      <span className="px-2.5 py-0.5 bg-[var(--bg-input)] rounded-lg">{rule.fallback}</span>
                     </>
                   )}
                   <button
                     onClick={() => handleDeleteRule(p.name, idx)}
-                    className="text-xs text-red-400/60 hover:text-red-400 ml-2"
+                    className="text-xs text-[var(--accent-red-text)] opacity-60 hover:opacity-100 ml-2"
                   >
                     x
                   </button>
                 </div>
               ))}
 
-              <div className="flex gap-2 items-end pl-4 pt-3 border-t border-white/[0.05]">
+              <div className="flex gap-2 items-end pl-4 pt-3 border-t border-[var(--border-subtle)]">
                 <select
                   value={selectedProfile}
                   onChange={e => setSelectedProfile(e.target.value)}
@@ -348,18 +376,16 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
                   <option value={p.name}>{p.name}</option>
                 </select>
                 <Input label="模型" value={newRule.model_pattern} onChange={v => setNewRule({ ...newRule, model_pattern: v })} placeholder="gpt-*" />
-                <select
+                <Select
+                  label="站点"
                   value={newRule.site}
-                  onChange={e => setNewRule({ ...newRule, site: e.target.value })}
-                  className="px-3 py-2.5 bg-white/[0.06] rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-                >
-                  <option value="">选择站点</option>
-                  {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                  onChange={v => setNewRule({ ...newRule, site: v })}
+                  options={[{ value: '', label: '选择站点' }, ...sites.map(s => ({ value: s.id, label: s.name }))]}
+                />
                 <Input label="Fallback" value={newRule.fallback} onChange={v => setNewRule({ ...newRule, fallback: v })} placeholder="可选" />
                 <button
                   onClick={() => { setSelectedProfile(p.name); setTimeout(handleAddRule, 0); }}
-                  className="px-4 py-2.5 bg-blue-500 hover:bg-blue-400 rounded-xl text-sm transition-colors shrink-0"
+                  className="px-4 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 rounded-xl text-sm text-white transition-colors shrink-0"
                 >
                   +
                 </button>
@@ -443,16 +469,16 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
         <h2 className="text-2xl font-semibold tracking-tight">站点管理</h2>
         <button
           onClick={startAdd}
-          className="px-5 py-2.5 bg-blue-500 hover:bg-blue-400 rounded-xl text-sm transition-colors"
+          className="px-5 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 rounded-xl text-sm text-white transition-colors"
         >
           添加站点
         </button>
       </div>
 
-      {msg && <div className="p-4 bg-blue-500/10 rounded-2xl text-blue-400 text-sm">{msg}</div>}
+      {msg && <div className="p-4 bg-[var(--accent-blue-bg)] rounded-2xl text-[var(--accent-blue-text)] text-sm">{msg}</div>}
 
       {showAdd && (
-        <div className="bg-white/[0.04] rounded-2xl p-5 space-y-4">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-4">
           <h3 className="font-medium">{editSite ? '编辑站点' : '添加新站点'}</h3>
           <div className="grid grid-cols-2 gap-4">
             {editSite ? (
@@ -463,31 +489,29 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
             <Input label="名称" value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="OpenAI 官方" />
             <Input label="Base URL" value={form.base_url} onChange={v => setForm({ ...form, base_url: v })} placeholder="https://api.openai.com" />
             <Input label="API Key" value={form.api_key} onChange={v => setForm({ ...form, api_key: v })} placeholder={editSite ? '留空则不修改' : 'sk-...'} type="password" />
-            <div>
-              <label className="block text-xs text-white/30 mb-1.5">协议</label>
-              <select
-                value={form.protocol}
-                onChange={e => setForm({ ...form, protocol: e.target.value })}
-                className="w-full px-3 py-2.5 bg-white/[0.06] rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-              >
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="gemini">Gemini</option>
-              </select>
-            </div>
+            <Select
+              label="协议"
+              value={form.protocol}
+              onChange={v => setForm({ ...form, protocol: v })}
+              options={[
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'anthropic', label: 'Anthropic' },
+                { value: 'gemini', label: 'Gemini' },
+              ]}
+            />
             <Input label="模型(逗号分隔)" value={form.models} onChange={v => setForm({ ...form, models: v })} placeholder="gpt-4o,gpt-4o-mini" />
           </div>
           <div className="flex gap-3">
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="px-5 py-2.5 bg-green-500 hover:bg-green-400 disabled:opacity-40 rounded-xl text-sm transition-colors"
+              className="px-5 py-2.5 bg-green-500 hover:bg-green-400 disabled:opacity-40 rounded-xl text-sm text-white transition-colors"
             >
               {submitting ? '处理中...' : editSite ? '保存修改' : '确认添加'}
             </button>
             <button
               onClick={() => { setShowAdd(false); setEditSite(null); resetForm(); }}
-              className="px-5 py-2.5 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl text-sm transition-colors"
+              className="px-5 py-2.5 bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] rounded-xl text-sm transition-colors"
             >
               取消
             </button>
@@ -497,39 +521,39 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
 
       <div className="space-y-4">
         {sites.map(site => (
-          <div key={site.id} className="bg-white/[0.04] rounded-2xl p-5 hover:bg-white/[0.06] transition-colors">
+          <div key={site.id} className="bg-[var(--bg-card)] rounded-2xl p-5 hover:bg-[var(--bg-hover)] transition-colors">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <span className="font-medium">{site.name}</span>
-                <span className="ml-2 text-xs text-white/25">{site.id}</span>
+                <span className="ml-2 text-xs text-[var(--text-muted)]">{site.id}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs px-2.5 py-1 bg-white/[0.06] rounded-lg">{site.protocol}</span>
+                <span className="text-xs px-2.5 py-1 bg-[var(--bg-input)] rounded-lg">{site.protocol}</span>
                 <button
                   onClick={() => startEdit(site)}
-                  className="text-xs px-2.5 py-1 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors"
+                  className="text-xs px-2.5 py-1 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:opacity-80 rounded-lg transition-colors"
                 >
                   编辑
                 </button>
                 <button
                   onClick={() => handleDelete(site.id)}
-                  className="text-xs px-2.5 py-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors"
+                  className="text-xs px-2.5 py-1 bg-[var(--accent-red-bg)] text-[var(--accent-red-text)] hover:opacity-80 rounded-lg transition-colors"
                 >
                   删除
                 </button>
               </div>
             </div>
-            <p className="text-xs text-white/30 mb-2">{site.base_url}</p>
-            <p className="text-xs text-white/15 mb-3">Key: {site.api_key.slice(0, 8)}...{site.api_key.slice(-4)}</p>
+            <p className="text-xs text-[var(--text-muted)] mb-2">{site.base_url}</p>
+            <p className="text-xs text-[var(--text-muted)] opacity-50 mb-3">Key: {site.api_key.slice(0, 8)}...{site.api_key.slice(-4)}</p>
             <div className="flex flex-wrap gap-1.5">
               {site.models.map((m: string) => (
-                <span key={m} className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-lg">{m}</span>
+                <span key={m} className="text-xs px-2 py-0.5 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] rounded-lg">{m}</span>
               ))}
             </div>
           </div>
         ))}
         {sites.length === 0 && (
-          <div className="text-center py-10 text-white/20">暂无站点，点击上方"添加站点"开始</div>
+          <div className="text-center py-10 text-[var(--text-muted)]">暂无站点，点击上方"添加站点"开始</div>
         )}
       </div>
     </div>
@@ -556,45 +580,45 @@ function LogsPage() {
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold tracking-tight">请求日志</h2>
-        <button onClick={fetchLogs} className="px-4 py-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl text-sm transition-colors">
+        <button onClick={fetchLogs} className="px-4 py-2 bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] rounded-xl text-sm transition-colors">
           刷新
         </button>
       </div>
 
-      <div className="bg-white/[0.04] rounded-2xl overflow-hidden">
+      <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.06]">
-              <th className="text-left px-5 py-3 text-white/30 font-medium">时间</th>
-              <th className="text-left px-5 py-3 text-white/30 font-medium">站点</th>
-              <th className="text-left px-5 py-3 text-white/30 font-medium">模型</th>
-              <th className="text-left px-5 py-3 text-white/30 font-medium">耗时</th>
-              <th className="text-left px-5 py-3 text-white/30 font-medium">Tokens</th>
-              <th className="text-left px-5 py-3 text-white/30 font-medium">状态</th>
+            <tr className="border-b border-[var(--border-subtle)]">
+              <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">时间</th>
+              <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">站点</th>
+              <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">模型</th>
+              <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">耗时</th>
+              <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">Tokens</th>
+              <th className="text-left px-5 py-3 text-[var(--text-muted)] font-medium">状态</th>
             </tr>
           </thead>
           <tbody>
             {logs.map(log => (
-              <tr key={log.id} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
-                <td className="px-5 py-3 text-xs text-white/30">{new Date(log.timestamp).toLocaleTimeString()}</td>
+              <tr key={log.id} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]">
+                <td className="px-5 py-3 text-xs text-[var(--text-muted)]">{new Date(log.timestamp).toLocaleTimeString()}</td>
                 <td className="px-5 py-3">{log.site_id}</td>
-                <td className="px-5 py-3 font-mono text-blue-400 text-xs">{log.model}</td>
+                <td className="px-5 py-3 font-mono text-[var(--accent-blue-text)] text-xs">{log.model}</td>
                 <td className="px-5 py-3">{log.latency_ms}ms</td>
                 <td className="px-5 py-3 text-xs">{log.input_tokens}/{log.output_tokens}</td>
                 <td className="px-5 py-3">
                   <span className={`text-xs px-2 py-0.5 rounded-lg ${
-                    log.status_code >= 400 ? 'bg-red-500/10 text-red-400' :
-                    log.status_code >= 300 ? 'bg-yellow-500/10 text-yellow-400' :
-                    'bg-green-500/10 text-green-400'
+                    log.status_code >= 400 ? 'bg-[var(--accent-red-bg)] text-[var(--accent-red-text)]' :
+                    log.status_code >= 300 ? 'bg-[var(--accent-yellow-bg)] text-[var(--accent-yellow-text)]' :
+                    'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)]'
                   }`}>
                     {log.status_code}
                   </span>
-                  {log.is_stream && <span className="ml-1.5 text-xs text-white/20">stream</span>}
+                  {log.is_stream && <span className="ml-1.5 text-xs text-[var(--text-muted)]">stream</span>}
                 </td>
               </tr>
             ))}
             {logs.length === 0 && !loading && (
-              <tr><td colSpan={6} className="px-5 py-10 text-center text-white/20">暂无日志</td></tr>
+              <tr><td colSpan={6} className="px-5 py-10 text-center text-[var(--text-muted)]">暂无日志</td></tr>
             )}
           </tbody>
         </table>
@@ -605,25 +629,25 @@ function LogsPage() {
 
 function StatsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [days, setDays] = useState(1);
+  const [days, setDays] = useState('1');
 
   useEffect(() => {
-    api.getStats(days).then(setStats).catch(() => {});
+    api.getStats(Number(days)).then(setStats).catch(() => {});
   }, [days]);
 
   return (
     <div className="p-8 space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold tracking-tight">用量统计</h2>
-        <select
+        <Select
           value={days}
-          onChange={e => setDays(Number(e.target.value))}
-          className="px-4 py-2 bg-white/[0.06] rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-        >
-          <option value={1}>今日</option>
-          <option value={7}>近7天</option>
-          <option value={30}>近30天</option>
-        </select>
+          onChange={setDays}
+          options={[
+            { value: '1', label: '今日' },
+            { value: '7', label: '近7天' },
+            { value: '30', label: '近30天' },
+          ]}
+        />
       </div>
 
       <div className="grid grid-cols-4 gap-5">
@@ -636,7 +660,7 @@ function StatsPage() {
   );
 }
 
-function SettingsPage() {
+function SettingsPage({ theme, onThemeChange }: { theme: Theme; onThemeChange: (t: Theme) => void }) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [msg, setMsg] = useState('');
   const [saving, setSaving] = useState(false);
@@ -692,16 +716,41 @@ function SettingsPage() {
     }
   };
 
-  if (!config) return <div className="p-8 text-white/20">加载中...</div>;
+  if (!config) return <div className="p-8 text-[var(--text-muted)]">加载中...</div>;
+
+  const themeOptions: { value: Theme; label: string }[] = [
+    { value: 'light', label: '浅色' },
+    { value: 'dark', label: '暗色' },
+    { value: 'system', label: '跟随系统' },
+  ];
 
   return (
     <div className="p-8 space-y-8">
       <h2 className="text-2xl font-semibold tracking-tight">设置</h2>
 
-      {msg && <div className="p-4 bg-blue-500/10 rounded-2xl text-blue-400 text-sm">{msg}</div>}
+      {msg && <div className="p-4 bg-[var(--accent-blue-bg)] rounded-2xl text-[var(--accent-blue-text)] text-sm">{msg}</div>}
 
       <div className="space-y-5">
-        <div className="bg-white/[0.04] rounded-2xl p-5 space-y-4">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-4">
+          <h3 className="font-medium">外观</h3>
+          <div className="flex gap-2">
+            {themeOptions.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => onThemeChange(opt.value)}
+                className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
+                  theme === opt.value
+                    ? 'bg-[var(--accent-blue)] text-white'
+                    : 'bg-[var(--bg-input)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-4">
           <h3 className="font-medium">代理设置</h3>
           <div className="grid grid-cols-2 gap-4">
             <Input label="代理监听地址" value={proxyListen} onChange={setProxyListen} placeholder="127.0.0.1:9090" />
@@ -709,22 +758,22 @@ function SettingsPage() {
           </div>
         </div>
 
-        <div className="bg-white/[0.04] rounded-2xl p-5 space-y-4">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-4">
           <h3 className="font-medium">安全设置</h3>
           <Input label="Access Token" value={accessToken} onChange={setAccessToken} placeholder="留空则不鉴权" type="password" />
           <Input label="IP 白名单(逗号分隔)" value={allowedIPs} onChange={setAllowedIPs} placeholder="127.0.0.1, 10.0.0.1" />
           <Input label="全局 RPM 限制" value={String(globalRPM)} onChange={v => setGlobalRPM(Number(v) || 0)} placeholder="60" />
         </div>
 
-        <div className="bg-white/[0.04] rounded-2xl p-5 space-y-4">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-4">
           <h3 className="font-medium">日志设置</h3>
           <div className="flex items-center gap-3">
-            <label className="text-sm text-white/40">启用日志</label>
+            <label className="text-sm text-[var(--text-muted)]">启用日志</label>
             <button
               onClick={() => setLogEnabled(!logEnabled)}
-              className={`w-11 h-6 rounded-full transition-colors ${logEnabled ? 'bg-blue-500' : 'bg-white/10'}`}
+              className={`w-11 h-6 rounded-full transition-colors ${logEnabled ? 'bg-[var(--toggle-active)]' : 'bg-[var(--toggle-bg)]'}`}
             >
-              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${logEnabled ? 'translate-x-5.5' : 'translate-x-0.5'}`} />
+              <div className={`w-5 h-5 rounded-full bg-[var(--toggle-knob)] shadow-sm transition-transform ${logEnabled ? 'translate-x-5.5' : 'translate-x-0.5'}`} />
             </button>
           </div>
           <Input label="日志保留天数" value={String(logMaxDays)} onChange={v => setLogMaxDays(Number(v) || 0)} placeholder="30" />
@@ -734,13 +783,13 @@ function SettingsPage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-5 py-2.5 bg-blue-500 hover:bg-blue-400 disabled:opacity-40 rounded-xl text-sm transition-colors"
+            className="px-5 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 disabled:opacity-40 rounded-xl text-sm text-white transition-colors"
           >
             {saving ? '保存中...' : '保存配置'}
           </button>
           <button
             onClick={handleReload}
-            className="px-5 py-2.5 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl text-sm transition-colors"
+            className="px-5 py-2.5 bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] rounded-xl text-sm transition-colors"
           >
             重新加载配置
           </button>
@@ -752,8 +801,8 @@ function SettingsPage() {
 
 function Card({ title, value }: { title: string; value: string }) {
   return (
-    <div className="bg-white/[0.04] rounded-2xl p-5">
-      <p className="text-xs text-white/30 mb-2">{title}</p>
+    <div className="bg-[var(--bg-card)] rounded-2xl p-5">
+      <p className="text-xs text-[var(--text-muted)] mb-2">{title}</p>
       <p className="text-2xl font-semibold">{value}</p>
     </div>
   );
@@ -764,15 +813,75 @@ function Input({ label, value, onChange, placeholder, type = 'text', disabled = 
 }) {
   return (
     <div>
-      <label className="block text-xs text-white/30 mb-1.5">{label}</label>
+      <label className="block text-xs text-[var(--text-muted)] mb-1.5">{label}</label>
       <input
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className={`w-full px-3.5 py-2.5 bg-white/[0.06] rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 placeholder-white/15 ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+        className={`w-full px-3.5 py-2.5 bg-[var(--bg-input)] rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]/50 placeholder:text-[var(--text-muted)] ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
       />
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, options }: {
+  label?: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div className="relative" ref={ref}>
+      {label && <label className="block text-xs text-[var(--text-muted)] mb-1.5">{label}</label>}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full px-3.5 py-2.5 bg-[var(--bg-input)] rounded-xl text-sm text-left focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]/50 flex items-center justify-between"
+      >
+        <span className={!selected?.value ? 'text-[var(--text-muted)]' : ''}>{selected?.label || '请选择'}</span>
+        <svg className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-[var(--select-dropdown)] rounded-xl shadow-lg border border-[var(--border-subtle)] py-1 max-h-60 overflow-auto">
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors ${
+                opt.value === value
+                  ? 'bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)]'
+                  : 'hover:bg-[var(--select-hover)] text-[var(--text-primary)]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
