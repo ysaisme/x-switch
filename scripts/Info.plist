@@ -5,17 +5,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
     <key>CFBundleExecutable</key>
-    <string>mswitch</string>
+    <string>xswitch</string>
     <key>CFBundleIconFile</key>
     <string>icon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.ysaisme.mswitch</string>
+    <string>com.ysaisme.xswitch</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>mswitch</string>
+    <string>X Switch</string>
     <key>CFBundleDisplayName</key>
-    <string>mswitch</string>
+    <string>X Switch</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

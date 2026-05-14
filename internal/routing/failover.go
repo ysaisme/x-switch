@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ysaisme/mswitch/internal/config"
+	"github.com/ysaisme/x-switch/internal/config"
 )
 
 type SiteHealth struct {
@@ -74,7 +74,7 @@ func (f *FailoverManager) RecordFailure(siteID, model string) {
 	if h.FailCount >= f.MaxFailCount {
 		h.Healthy = false
 		h.RecoverAt = time.Now().Add(f.RecoveryWait)
-		log.Printf("[mswitch] FAILOVER: %s/%s marked as degraded (fail_count=%d)", siteID, model, h.FailCount)
+		log.Printf("[xswitch] FAILOVER: %s/%s marked as degraded (fail_count=%d)", siteID, model, h.FailCount)
 	}
 }
 
@@ -109,7 +109,7 @@ func (f *FailoverManager) FindFallback(model string, cfg *config.Config) *config
 			if f.IsHealthy(rule.Fallback, model) {
 				site := cfg.FindSite(rule.Fallback)
 				if site != nil {
-					log.Printf("[mswitch] FAILOVER: %s -> fallback %s for model %s", rule.Site, rule.Fallback, model)
+					log.Printf("[xswitch] FAILOVER: %s -> fallback %s for model %s", rule.Site, rule.Fallback, model)
 					return site
 				}
 			}
@@ -139,7 +139,7 @@ func (f *FailoverManager) TryRecover() {
 		if !h.Healthy && now.After(h.RecoverAt) {
 			h.Healthy = true
 			h.FailCount = 0
-			log.Printf("[mswitch] FAILOVER: %s recovered", k)
+			log.Printf("[xswitch] FAILOVER: %s recovered", k)
 		}
 	}
 }

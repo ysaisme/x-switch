@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ysaisme/mswitch/internal/config"
-	"github.com/ysaisme/mswitch/internal/routing"
-	"github.com/ysaisme/mswitch/internal/store"
+	"github.com/ysaisme/x-switch/internal/config"
+	"github.com/ysaisme/x-switch/internal/routing"
+	"github.com/ysaisme/x-switch/internal/store"
 )
 
 type Server struct {

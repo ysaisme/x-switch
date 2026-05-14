@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ysaisme/mswitch/internal/adapter"
-	"github.com/ysaisme/mswitch/internal/routing"
-	"github.com/ysaisme/mswitch/internal/store"
+	"github.com/ysaisme/x-switch/internal/adapter"
+	"github.com/ysaisme/x-switch/internal/routing"
+	"github.com/ysaisme/x-switch/internal/store"
 )
 
 type ChatRequest struct {
@@ -49,7 +49,7 @@ func New(router *routing.Router, s *store.Store, fo *routing.FailoverManager) *P
 func (p *Proxy) drainLogs() {
 	for l := range p.logCh {
 		if err := p.store.InsertLog(l); err != nil {
-			log.Printf("[mswitch] log write error: %v", err)
+			log.Printf("[xswitch] log write error: %v", err)
 		}
 	}
 }
@@ -103,7 +103,7 @@ func (p *Proxy) HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	reqID := fmt.Sprintf("req-%d", p.reqCount.Add(1))
 	start := time.Now()
 
-	log.Printf("[mswitch] %s -> %s (model: %s, stream: %v)", r.RemoteAddr, site.ID, chatReq.Model, chatReq.Stream)
+	log.Printf("[xswitch] %s -> %s (model: %s, stream: %v)", r.RemoteAddr, site.ID, chatReq.Model, chatReq.Stream)
 
 	resp, err := p.client.Do(upstreamReq)
 	latency := time.Since(start).Milliseconds()
@@ -199,7 +199,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, resp *http.Response) {
 		}
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("[mswitch] stream read error: %v", err)
+				log.Printf("[xswitch] stream read error: %v", err)
 			}
 			break
 		}
@@ -221,7 +221,7 @@ func (p *Proxy) HandleModels(w http.ResponseWriter, r *http.Request) {
 		OwnedBy string `json:"owned_by"`
 	}
 
-	var models []Model
+	models := []Model{}
 	now := time.Now().Unix()
 
 	for _, site := range cfg.Sites {

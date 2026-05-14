@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ysaisme/mswitch/internal/adapter"
-	"github.com/ysaisme/mswitch/internal/config"
-	"github.com/ysaisme/mswitch/internal/store"
+	"github.com/ysaisme/x-switch/internal/adapter"
+	"github.com/ysaisme/x-switch/internal/config"
+	"github.com/ysaisme/x-switch/internal/store"
 )
 
 type ModelPricing struct {
@@ -91,7 +91,7 @@ func (t *BalanceTracker) RefreshAll() {
 func (t *BalanceTracker) refreshSite(site config.Site) {
 	req, err := http.NewRequest("GET", site.BalanceAPI, nil)
 	if err != nil {
-		log.Printf("[mswitch] balance request error for %s: %v", site.ID, err)
+		log.Printf("[xswitch] balance request error for %s: %v", site.ID, err)
 		return
 	}
 
@@ -99,7 +99,7 @@ func (t *BalanceTracker) refreshSite(site config.Site) {
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		log.Printf("[mswitch] balance fetch error for %s: %v", site.ID, err)
+		log.Printf("[xswitch] balance fetch error for %s: %v", site.ID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -111,7 +111,7 @@ func (t *BalanceTracker) refreshSite(site config.Site) {
 	adp := adapter.GetAdapter(site.Protocol)
 	info, err := adp.ParseBalance(body)
 	if err != nil {
-		log.Printf("[mswitch] balance parse error for %s: %v", site.ID, err)
+		log.Printf("[xswitch] balance parse error for %s: %v", site.ID, err)
 		return
 	}
 
@@ -135,7 +135,7 @@ func (t *BalanceTracker) checkAlerts(siteID string, info *adapter.BalanceInfo) {
 
 	for _, alert := range alerts {
 		if alert.SiteID == siteID && info.Balance < alert.Threshold {
-			log.Printf("[mswitch] BALANCE ALERT: %s balance %.2f %s below threshold %.2f",
+			log.Printf("[xswitch] BALANCE ALERT: %s balance %.2f %s below threshold %.2f",
 				siteID, info.Balance, info.Currency, alert.Threshold)
 
 			if alert.Notify == "webhook" && alert.WebhookURL != "" {
@@ -155,7 +155,7 @@ func (t *BalanceTracker) sendWebhook(url string, siteID string, info *adapter.Ba
 
 	resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 	if err != nil {
-		log.Printf("[mswitch] webhook error: %v", err)
+		log.Printf("[xswitch] webhook error: %v", err)
 		return
 	}
 	resp.Body.Close()

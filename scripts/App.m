@@ -14,25 +14,23 @@
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    self.mswitchPath = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"mswitch"];
+    self.mswitchPath = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"xswitch"];
     self.cachedProfiles = @[];
     self.cachedSites = @[];
     self.activeProfile = @"";
 
     if (![[NSFileManager defaultManager] fileExistsAtPath:self.mswitchPath]) {
         NSAlert *alert = [[NSAlert alloc] init];
-        alert.messageText = @"mswitch binary not found";
+        alert.messageText = @"X Switch binary not found";
         alert.informativeText = [NSString stringWithFormat:@"Expected: %@", self.mswitchPath];
         [alert runModal];
         [NSApp terminate:nil];
         return;
     }
 
-    [self ensureServerRunning];
     [self setupStatusBar];
     [self setupWindow];
-    [self waitForServerAndLoad];
-    [self refreshMenuData];
+    [self ensureServerRunning];
 }
 
 #pragma mark - Status Bar
@@ -75,7 +73,7 @@
 - (void)buildMenu:(NSMenu *)menu {
     [menu removeAllItems];
 
-    NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"mswitch" action:nil keyEquivalent:@""];
+    NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"X Switch" action:nil keyEquivalent:@""];
     titleItem.enabled = NO;
     [menu addItem:titleItem];
     [menu addItem:[NSMenuItem separatorItem]];
@@ -123,7 +121,7 @@
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"退出 mswitch" action:@selector(terminateApp:) keyEquivalent:@"q"];
+    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"退出 X Switch" action:@selector(terminateApp:) keyEquivalent:@"q"];
     quitItem.target = self;
     [menu addItem:quitItem];
 }
@@ -134,6 +132,7 @@
 
 - (void)refreshMenuData {
     dispatch_group_t group = dispatch_group_create();
+    __block BOOL groupDone = NO;
 
     dispatch_group_enter(group);
     [self fetchJSON:@"/api/v1/routing/current" completion:^(NSDictionary *data) {
@@ -160,13 +159,27 @@
     }];
 
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+        groupDone = YES;
         [self buildMenu:self.statusItem.menu];
     });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        if (!groupDone) {
+            [self buildMenu:self.statusItem.menu];
+        }
+    });
+}
+
+- (NSURLSession *)timeoutSession:(NSTimeInterval)timeout {
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.timeoutIntervalForRequest = timeout;
+    config.timeoutIntervalForResource = timeout;
+    return [NSURLSession sessionWithConfiguration:config];
 }
 
 - (void)fetchJSON:(NSString *)path completion:(void (^)(NSDictionary *))completion {
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://127.0.0.1:9091%@", path]];
-    NSURLSessionDataTask *task = [NSURLSession.sharedSession
+    NSURLSessionDataTask *task = [[self timeoutSession:5]
         dataTaskWithURL:url
         completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
             if (!data) {
@@ -186,8 +199,8 @@
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
 
-    [[NSURLSession.sharedSession dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        if ([(NSHTTPURLResponse *)resp statusCode] == 200) {
+    [[[self timeoutSession:5] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        if (resp && [(NSHTTPURLResponse *)resp statusCode] == 200) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self refreshMenuData];
             });
@@ -232,7 +245,7 @@
                                                backing:NSBackingStoreBuffered
                                                   defer:NO];
     [self.window center];
-    self.window.title = @"mswitch";
+    self.window.title = @"X Switch";
     self.window.minSize = NSMakeSize(800, 600);
     self.window.titleVisibility = NSWindowTitleHidden;
     self.window.titlebarAppearsTransparent = YES;
@@ -249,25 +262,30 @@
 #pragma mark - Server
 
 - (void)ensureServerRunning {
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    __block BOOL running = NO;
+    NSURL *healthURL = [NSURL URLWithString:@"http://127.0.0.1:9091/api/v1/health"];
+    [[[self timeoutSession:3] dataTaskWithURL:healthURL completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        BOOL running = (resp != nil && [(NSHTTPURLResponse *)resp statusCode] == 200);
 
-    NSURLSessionDataTask *task = [NSURLSession.sharedSession
-        dataTaskWithURL:[NSURL URLWithString:@"http://127.0.0.1:9091/api/v1/health"]
-        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-            if ([(NSHTTPURLResponse *)resp statusCode] == 200) running = YES;
-            dispatch_semaphore_signal(sem);
-        }];
-    [task resume];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+        if (running) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self waitForServerAndLoad];
+                [self refreshMenuData];
+            });
+            return;
+        }
 
-    if (running) return;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSTask *process = [[NSTask alloc] init];
+            process.executableURL = [NSURL fileURLWithPath:self.mswitchPath];
+            process.arguments = @[@"start"];
+            [process launch];
 
-    NSTask *process = [[NSTask alloc] init];
-    process.executableURL = [NSURL fileURLWithPath:self.mswitchPath];
-    process.arguments = @[@"start"];
-    [process launch];
-    [process waitUntilExit];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self waitForServerAndLoad];
+                [self refreshMenuData];
+            });
+        });
+    }] resume];
 }
 
 - (void)waitForServerAndLoad {
@@ -276,10 +294,11 @@
 
     void (^check)(void) = ^{
         attempts++;
-        NSURLSessionDataTask *task = [NSURLSession.sharedSession
-            dataTaskWithURL:[NSURL URLWithString:@"http://127.0.0.1:9091/api/v1/health"]
+        NSURL *healthURL = [NSURL URLWithString:@"http://127.0.0.1:9091/api/v1/health"];
+        NSURLSessionDataTask *task = [[self timeoutSession:3]
+            dataTaskWithURL:healthURL
             completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-                if ([(NSHTTPURLResponse *)resp statusCode] == 200) {
+                if (resp && [(NSHTTPURLResponse *)resp statusCode] == 200) {
                     dispatch_async(dispatch_get_main_queue(), ^{
                         typeof(self) strongSelf = weakSelf;
                         if (!strongSelf) return;
@@ -306,7 +325,7 @@
     process.executableURL = [NSURL fileURLWithPath:self.mswitchPath];
     process.arguments = @[@"stop"];
     [process launch];
-    [process waitUntilExit];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.5]];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {

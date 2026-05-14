@@ -16,35 +16,35 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/ysaisme/mswitch/internal/api"
-	"github.com/ysaisme/mswitch/internal/config"
-	"github.com/ysaisme/mswitch/internal/proxy"
-	"github.com/ysaisme/mswitch/internal/routing"
-	"github.com/ysaisme/mswitch/internal/security"
-	"github.com/ysaisme/mswitch/internal/store"
+	"github.com/ysaisme/x-switch/internal/api"
+	"github.com/ysaisme/x-switch/internal/config"
+	"github.com/ysaisme/x-switch/internal/proxy"
+	"github.com/ysaisme/x-switch/internal/routing"
+	"github.com/ysaisme/x-switch/internal/security"
+	"github.com/ysaisme/x-switch/internal/store"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mswitch",
+	Use:   "xswitch",
 	Short: "Model API hot-switch proxy",
-	Long:  "mswitch is a proxy tool that allows hot-switching between different LLM API providers",
+	Long:  "xswitch is a proxy tool that allows hot-switching between different LLM API providers",
 }
 
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start the mswitch proxy server",
+	Short: "Start the xswitch proxy server",
 	RunE:  runStart,
 }
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop the mswitch proxy server",
+	Short: "Stop the xswitch proxy server",
 	RunE:  runStop,
 }
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show mswitch proxy status",
+	Short: "Show xswitch proxy status",
 	RunE:  runStatus,
 }
 
@@ -56,7 +56,7 @@ var currentCmd = &cobra.Command{
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize mswitch configuration",
+	Short: "Initialize xswitch configuration",
 	RunE:  runInit,
 }
 
@@ -187,24 +187,24 @@ func runStart(cmd *cobra.Command, args []string) error {
 	proxyAddr := cfg.Proxy.Listen
 	webAddr := cfg.Proxy.WebListen
 
-	log.Printf("[mswitch] proxy server starting on %s", proxyAddr)
-	log.Printf("[mswitch] api server starting on %s", webAddr)
-	log.Printf("[mswitch] active profile: %s", cfg.Routing.ActiveProfile)
-	log.Printf("[mswitch] configured sites: %d", len(cfg.Sites))
-	log.Printf("[mswitch] logging: enabled=%v max_days=%d", cfg.Logging.Enabled, cfg.Logging.MaxDays)
+	log.Printf("[xswitch] proxy server starting on %s", proxyAddr)
+	log.Printf("[xswitch] api server starting on %s", webAddr)
+	log.Printf("[xswitch] active profile: %s", cfg.Routing.ActiveProfile)
+	log.Printf("[xswitch] configured sites: %d", len(cfg.Sites))
+	log.Printf("[xswitch] logging: enabled=%v max_days=%d", cfg.Logging.Enabled, cfg.Logging.MaxDays)
 
-	pidFile := filepath.Join(config.ConfigDir(), "mswitch.pid")
+	pidFile := filepath.Join(config.ConfigDir(), "xswitch.pid")
 	os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 
 	go func() {
 		if err := http.ListenAndServe(proxyAddr, proxyMux); err != nil {
-			log.Fatalf("[mswitch] proxy server error: %v", err)
+			log.Fatalf("[xswitch] proxy server error: %v", err)
 		}
 	}()
 
 	go func() {
 		if err := http.ListenAndServe(webAddr, apiServer.Handler()); err != nil {
-			log.Fatalf("[mswitch] api server error: %v", err)
+			log.Fatalf("[xswitch] api server error: %v", err)
 		}
 	}()
 
@@ -216,7 +216,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	close(failoverStop)
 	os.Remove(pidFile)
-	log.Println("[mswitch] shutting down...")
+	log.Println("[xswitch] shutting down...")
 	return nil
 }
 
@@ -227,9 +227,9 @@ func isAPIPath(path string) bool {
 func runUse(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		fmt.Println("Usage:")
-		fmt.Println("  mswitch use <profile>              - Switch to a profile")
-		fmt.Println("  mswitch use site <site_id>         - Route all to a site")
-		fmt.Println("  mswitch use model <model> <site>   - Route a model to a site")
+		fmt.Println("  xswitch use <profile>              - Switch to a profile")
+		fmt.Println("  xswitch use site <site_id>         - Route all to a site")
+		fmt.Println("  xswitch use model <model> <site>   - Route a model to a site")
 		return nil
 	}
 
@@ -242,7 +242,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	switch args[0] {
 	case "site":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: mswitch use site <site_id>")
+			return fmt.Errorf("usage: xswitch use site <site_id>")
 		}
 		if err := router.SwitchSite(args[1]); err != nil {
 			return err
@@ -251,7 +251,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 	case "model":
 		if len(args) < 3 {
-			return fmt.Errorf("usage: mswitch use model <model> <site_id>")
+			return fmt.Errorf("usage: xswitch use model <model> <site_id>")
 		}
 		if err := router.SwitchModel(args[1], args[2]); err != nil {
 			return err
@@ -273,10 +273,10 @@ func runUse(cmd *cobra.Command, args []string) error {
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	pidFile := filepath.Join(config.ConfigDir(), "mswitch.pid")
+	pidFile := filepath.Join(config.ConfigDir(), "xswitch.pid")
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
-		fmt.Println("mswitch is not running (pid file not found)")
+		fmt.Println("xswitch is not running (pid file not found)")
 		return nil
 	}
 
@@ -285,25 +285,25 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		fmt.Println("mswitch is not running")
+		fmt.Println("xswitch is not running")
 		return nil
 	}
 
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		fmt.Println("failed to stop mswitch:", err)
+		fmt.Println("failed to stop xswitch:", err)
 		return nil
 	}
 
 	os.Remove(pidFile)
-	fmt.Println("mswitch stopped")
+	fmt.Println("xswitch stopped")
 	return nil
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	pidFile := filepath.Join(config.ConfigDir(), "mswitch.pid")
+	pidFile := filepath.Join(config.ConfigDir(), "xswitch.pid")
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
-		fmt.Println("mswitch is not running")
+		fmt.Println("xswitch is not running")
 		return nil
 	}
 
@@ -312,18 +312,18 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		fmt.Println("mswitch is not running")
+		fmt.Println("xswitch is not running")
 		return nil
 	}
 
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		fmt.Println("mswitch is not running (stale pid file)")
+		fmt.Println("xswitch is not running (stale pid file)")
 		os.Remove(pidFile)
 		return nil
 	}
 
 	cfg, _ := config.Load()
-	fmt.Printf("mswitch is running (PID: %d)\n", pid)
+	fmt.Printf("xswitch is running (PID: %d)\n", pid)
 	fmt.Printf("  proxy:     %s\n", cfg.Proxy.Listen)
 	fmt.Printf("  web ui:    %s\n", cfg.Proxy.WebListen)
 	fmt.Printf("  profile:   %s\n", cfg.Routing.ActiveProfile)
@@ -369,7 +369,7 @@ func runSiteList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(cfg.Sites) == 0 {
-		fmt.Println("No sites configured. Run 'mswitch init' to get started.")
+		fmt.Println("No sites configured. Run 'xswitch init' to get started.")
 		return nil
 	}
 
@@ -442,7 +442,7 @@ func runSiteAdd(cmd *cobra.Command, args []string) error {
 
 func runSiteTest(cmd *cobra.Command, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: mswitch site test <site_id>")
+		return fmt.Errorf("usage: xswitch site test <site_id>")
 	}
 
 	cfg, err := config.Load()
@@ -492,7 +492,7 @@ func runProfileList(cmd *cobra.Command, args []string) error {
 
 func runProfileCreate(cmd *cobra.Command, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: mswitch profile create <name>")
+		return fmt.Errorf("usage: xswitch profile create <name>")
 	}
 
 	cfg, err := config.Load()
@@ -623,7 +623,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	cfg := config.DefaultConfig()
 
-	fmt.Println("Welcome to mswitch! Let's set up your first API site.")
+	fmt.Println("Welcome to xswitch! Let's set up your first API site.")
 	fmt.Println()
 
 	var id, name, baseURL, apiKey, modelsStr string
@@ -664,7 +664,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nConfig saved to %s\n", cfgPath)
-	fmt.Printf("Run 'mswitch start' to start the proxy server.\n")
+	fmt.Printf("Run 'xswitch start' to start the proxy server.\n")
 	return nil
 }
 
@@ -676,7 +676,7 @@ func maskKey(key string) string {
 }
 
 func isRunning() bool {
-	pidFile := filepath.Join(config.ConfigDir(), "mswitch.pid")
+	pidFile := filepath.Join(config.ConfigDir(), "xswitch.pid")
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		return false
@@ -740,7 +740,7 @@ func trimSpace(s string) string {
 func webUIFS() fs.FS {
 	sub, err := fs.Sub(webFS, "web_dist")
 	if err != nil {
-		log.Printf("[mswitch] warning: web ui assets not available: %v", err)
+		log.Printf("[xswitch] warning: web ui assets not available: %v", err)
 		return nil
 	}
 	return sub

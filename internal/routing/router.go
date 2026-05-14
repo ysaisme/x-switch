@@ -3,7 +3,7 @@ package routing
 import (
 	"sync"
 
-	"github.com/ysaisme/mswitch/internal/config"
+	"github.com/ysaisme/x-switch/internal/config"
 )
 
 type Router struct {

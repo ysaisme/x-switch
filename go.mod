@@ -1,4 +1,4 @@
-module github.com/ysaisme/mswitch
+module github.com/ysaisme/x-switch
 
 go 1.22.10
 

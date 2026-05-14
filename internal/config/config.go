@@ -68,8 +68,27 @@ type Logging struct {
 
 var (
 	instance *Config
-	once     sync.RWMutex
+	mu       sync.Mutex
 )
+
+func saveConfig(cfg *Config) error {
+	dir := ConfigDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	path := ConfigPath()
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	return nil
+}
 
 func DefaultConfig() *Config {
 	return &Config{
@@ -106,7 +125,7 @@ func DefaultConfig() *Config {
 
 func ConfigDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mswitch")
+	return filepath.Join(home, ".xswitch")
 }
 
 func ConfigPath() string {
@@ -114,25 +133,23 @@ func ConfigPath() string {
 }
 
 func Load() (*Config, error) {
-	once.RLock()
+	mu.Lock()
+	defer mu.Unlock()
+
 	if instance != nil {
 		c := *instance
-		once.RUnlock()
 		return &c, nil
 	}
-	once.RUnlock()
 
 	path := ConfigPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			cfg := DefaultConfig()
-			if saveErr := Save(cfg); saveErr != nil {
+			if saveErr := saveConfig(cfg); saveErr != nil {
 				return nil, fmt.Errorf("create default config: %w", saveErr)
 			}
-			once.Lock()
 			instance = cfg
-			once.Unlock()
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
@@ -143,38 +160,24 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	once.Lock()
 	instance = &cfg
-	once.Unlock()
 	return &cfg, nil
 }
 
 func Save(cfg *Config) error {
-	dir := ConfigDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
+	if err := saveConfig(cfg); err != nil {
+		return err
 	}
-
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-
-	path := ConfigPath()
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	once.Lock()
+	mu.Lock()
 	instance = cfg
-	once.Unlock()
+	mu.Unlock()
 	return nil
 }
 
 func Reload() (*Config, error) {
-	once.Lock()
+	mu.Lock()
 	instance = nil
-	once.Unlock()
+	mu.Unlock()
 	return Load()
 }
 

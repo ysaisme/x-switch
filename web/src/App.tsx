@@ -74,7 +74,7 @@ export default function App() {
     <div className="flex h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
       <nav className="w-56 bg-[var(--bg-sidebar)] backdrop-blur-sm flex flex-col shrink-0 border-r border-[var(--border-subtle)]">
         <div className="p-5 pb-4">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">mswitch</h1>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">X Switch</h1>
           <p className="text-xs text-[var(--text-muted)] mt-1.5">
             {routing ? routing.active_profile : 'loading...'}
           </p>
