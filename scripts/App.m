@@ -28,9 +28,42 @@
         return;
     }
 
+    [self setupMainMenu];
     [self setupStatusBar];
     [self setupWindow];
     [self ensureServerRunning];
+}
+
+#pragma mark - Main Menu
+
+- (void)setupMainMenu {
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"X Switch"];
+    [appMenu addItemWithTitle:@"关于 X Switch" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItemWithTitle:@"隐藏 X Switch" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"隐藏其他" action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"显示全部" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItemWithTitle:@"退出 X Switch" action:@selector(terminate:) keyEquivalent:@"q"];
+    appMenuItem.submenu = appMenu;
+    [mainMenu addItem:appMenuItem];
+
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"编辑"];
+    [editMenu addItemWithTitle:@"撤销" action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:@"重做" action:@selector(redo:) keyEquivalent:@"Z"];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"剪切" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"复制" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"粘贴" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"全选" action:@selector(selectAll:) keyEquivalent:@"a"];
+    editMenuItem.submenu = editMenu;
+    [mainMenu addItem:editMenuItem];
+
+    [NSApp setMainMenu:mainMenu];
 }
 
 #pragma mark - Status Bar
