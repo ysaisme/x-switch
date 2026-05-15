@@ -96,12 +96,6 @@ var profileCreateCmd = &cobra.Command{
 	RunE:  runProfileCreate,
 }
 
-var balanceCmd = &cobra.Command{
-	Use:   "balance [site_id]",
-	Short: "Check site balance",
-	RunE:  runBalance,
-}
-
 var logsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "View request logs",
@@ -127,7 +121,6 @@ func init() {
 	rootCmd.AddCommand(currentCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(useCmd)
-	rootCmd.AddCommand(balanceCmd)
 	rootCmd.AddCommand(logsCmd)
 
 	siteCmd := &cobra.Command{Use: "site", Short: "Manage API sites"}
@@ -240,15 +233,6 @@ func runUse(cmd *cobra.Command, args []string) error {
 	router := routing.NewRouter(cfg)
 
 	switch args[0] {
-	case "site":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: xswitch use site <site_id>")
-		}
-		if err := router.SwitchSite(args[1]); err != nil {
-			return err
-		}
-		fmt.Printf("Switched: all models -> %s\n", args[1])
-
 	case "model":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: xswitch use model <model> <site_id>")
@@ -516,32 +500,6 @@ func runProfileCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Profile '%s' created.\n", args[0])
-	return nil
-}
-
-func runBalance(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	sites := cfg.Sites
-	if len(args) > 0 {
-		site := cfg.FindSite(args[0])
-		if site == nil {
-			return fmt.Errorf("site %s not found", args[0])
-		}
-		sites = []config.Site{*site}
-	}
-
-	for _, site := range sites {
-		if site.BalanceAPI == "" {
-			fmt.Printf("  %-20s  (no balance API configured)\n", site.ID)
-			continue
-		}
-		fmt.Printf("  %-20s  checking...\n", site.ID)
-	}
-
 	return nil
 }
 

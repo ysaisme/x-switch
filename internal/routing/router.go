@@ -40,30 +40,6 @@ func (r *Router) SwitchProfile(profileName string) error {
 	return config.Save(r.cfg)
 }
 
-func (r *Router) SwitchSite(siteID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	site := r.cfg.FindSite(siteID)
-	if site == nil {
-		return ErrSiteNotFound
-	}
-
-	profile := r.cfg.GetActiveProfile()
-	if profile == nil {
-		return ErrNoActiveProfile
-	}
-
-	profile.Rules = []config.Rule{
-		{
-			ModelPattern: "*",
-			Site:         siteID,
-		},
-	}
-
-	return config.Save(r.cfg)
-}
-
 func (r *Router) SwitchModel(model, siteID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -80,7 +56,7 @@ func (r *Router) SwitchModel(model, siteID string) error {
 
 	replaced := false
 	for i, rule := range profile.Rules {
-		if matchModelPattern(rule.ModelPattern, model) {
+		if rule.ModelPattern == model {
 			profile.Rules[i].Site = siteID
 			replaced = true
 			break

@@ -18,13 +18,12 @@ type Config struct {
 }
 
 type Site struct {
-	ID         string   `yaml:"id" json:"id"`
-	Name       string   `yaml:"name" json:"name"`
-	BaseURL    string   `yaml:"base_url" json:"base_url"`
-	Protocol   string   `yaml:"protocol" json:"protocol"`
-	APIKey     string   `yaml:"api_key" json:"api_key"`
-	Models     []string `yaml:"models" json:"models"`
-	BalanceAPI string   `yaml:"balance_api,omitempty" json:"balance_api,omitempty"`
+	ID       string   `yaml:"id" json:"id"`
+	Name     string   `yaml:"name" json:"name"`
+	BaseURL  string   `yaml:"base_url" json:"base_url"`
+	Protocol string   `yaml:"protocol" json:"protocol"`
+	APIKey   string   `yaml:"api_key" json:"api_key"`
+	Models   []string `yaml:"models" json:"models"`
 }
 
 type Routing struct {

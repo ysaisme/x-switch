@@ -73,16 +73,6 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_logs_site_id ON request_logs(site_id);
 		CREATE INDEX IF NOT EXISTS idx_logs_model ON request_logs(model);
-
-		CREATE TABLE IF NOT EXISTS balance_history (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
-			site_id    TEXT,
-			balance    REAL,
-			currency   TEXT DEFAULT 'USD',
-			timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_balance_site ON balance_history(site_id);
 	`)
 
 	return err
@@ -177,12 +167,6 @@ func (s *Store) GetStats(since time.Time) (*Stats, error) {
 	}
 
 	return stats, nil
-}
-
-func (s *Store) InsertBalance(siteID string, balance float64, currency string) error {
-	_, err := s.db.Exec("INSERT INTO balance_history (site_id, balance, currency) VALUES (?, ?, ?)",
-		siteID, balance, currency)
-	return err
 }
 
 func (s *Store) Close() error {

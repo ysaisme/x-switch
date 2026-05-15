@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ysaisme/x-switch/internal/adapter"
 	"github.com/ysaisme/x-switch/internal/config"
 	"github.com/ysaisme/x-switch/internal/routing"
 	"github.com/ysaisme/x-switch/internal/store"
@@ -43,6 +44,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/v1/sites/add", s.handleSiteAdd)
 	s.mux.HandleFunc("/api/v1/sites/update", s.handleSiteUpdate)
 	s.mux.HandleFunc("/api/v1/sites/delete", s.handleSiteDelete)
+	s.mux.HandleFunc("/api/v1/sites/test", s.handleSiteTest)
+	s.mux.HandleFunc("/api/v1/sites/discover-models", s.handleSiteDiscoverModels)
 	s.mux.HandleFunc("/api/v1/config", s.handleConfig)
 	s.mux.HandleFunc("/api/v1/config/reload", s.handleConfigReload)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
@@ -63,7 +66,6 @@ func (s *Server) handleRoutingSwitch(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Profile      string `json:"profile,omitempty"`
-		Site         string `json:"site,omitempty"`
 		Model        string `json:"model,omitempty"`
 		SiteForModel string `json:"site_for_model,omitempty"`
 	}
@@ -77,12 +79,10 @@ func (s *Server) handleRoutingSwitch(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case req.Profile != "":
 		err = s.router.SwitchProfile(req.Profile)
-	case req.Site != "":
-		err = s.router.SwitchSite(req.Site)
 	case req.Model != "" && req.SiteForModel != "":
 		err = s.router.SwitchModel(req.Model, req.SiteForModel)
 	default:
-		writeError(w, http.StatusBadRequest, "must specify profile, site, or model+site_for_model")
+		writeError(w, http.StatusBadRequest, "must specify profile, or model+site_for_model")
 		return
 	}
 
@@ -558,6 +558,80 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleSiteTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	site := cfg.FindSite(req.ID)
+	if site == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("site %s not found", req.ID))
+		return
+	}
+
+	adp := adapter.GetAdapter(site.Protocol)
+	result, _ := adp.TestConnectivity(site.BaseURL, site.APIKey)
+	result.SiteID = site.ID
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleSiteDiscoverModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	cfg := s.router.GetConfig()
+	site := cfg.FindSite(req.ID)
+	if site == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("site %s not found", req.ID))
+		return
+	}
+
+	adp := adapter.GetAdapter(site.Protocol)
+	models, err := adp.ListModels(site.BaseURL, site.APIKey)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("discover models failed: %v", err))
+		return
+	}
+
+	if models == nil {
+		models = []adapter.ModelInfo{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"site_id": site.ID,
+		"models":  models,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

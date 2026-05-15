@@ -19,7 +19,6 @@ export interface Site {
   protocol: string;
   api_key: string;
   models: string[];
-  balance_api?: string;
 }
 
 export interface Rule {
@@ -74,6 +73,20 @@ export interface AppConfig {
   logging: { enabled: boolean; max_days: number; log_body: boolean };
 }
 
+export interface ConnectivityResult {
+  ok: boolean;
+  latency_ms: number;
+  error?: string;
+  models_available?: number;
+  site_id?: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  name?: string;
+  created?: number;
+}
+
 export const api = {
   getRoutingCurrent: () => request<RoutingCurrent>('/api/v1/routing/current'),
   getSites: () => request<{ sites: Site[] }>('/api/v1/sites').then(r => r.sites),
@@ -82,11 +95,6 @@ export const api = {
     request<{ success: boolean }>('/api/v1/routing/switch', {
       method: 'POST',
       body: JSON.stringify({ profile }),
-    }),
-  switchSite: (site: string) =>
-    request<{ success: boolean }>('/api/v1/routing/switch', {
-      method: 'POST',
-      body: JSON.stringify({ site }),
     }),
   switchModel: (model: string, site_for_model: string) =>
     request<{ success: boolean }>('/api/v1/routing/switch', {
@@ -141,4 +149,14 @@ export const api = {
   reloadConfig: () =>
     request<{ success: boolean }>('/api/v1/config/reload', { method: 'POST' }),
   health: () => request<{ status: string }>('/api/v1/health'),
+  testSite: (id: string) =>
+    request<ConnectivityResult>('/api/v1/sites/test', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+  discoverModels: (id: string) =>
+    request<{ site_id: string; models: ModelInfo[] }>('/api/v1/sites/discover-models', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
 };

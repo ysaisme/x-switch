@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/client';
-import type { RoutingCurrent, Site, Profile, Rule, Stats, RequestLog, AppConfig } from './api/client';
+import type { RoutingCurrent, Site, Profile, Rule, Stats, RequestLog, AppConfig, ConnectivityResult } from './api/client';
 
-type Page = 'dashboard' | 'switch' | 'sites' | 'logs' | 'stats' | 'settings';
+type Page = 'dashboard' | 'switch' | 'sites' | 'logs' | 'settings';
 type Theme = 'light' | 'dark' | 'system';
 
 function getEffectiveTheme(theme: Theme): 'light' | 'dark' {
@@ -23,10 +23,18 @@ export default function App() {
     return (localStorage.getItem('mswitch-theme') as Theme) || 'system';
   });
 
+  const notifyNativeTheme = useCallback((t: Theme) => {
+    try {
+      const effective = getEffectiveTheme(t);
+      (window as any).webkit?.messageHandlers?.themeChange?.postMessage(effective);
+    } catch {}
+  }, []);
+
   const applyTheme = useCallback((t: Theme) => {
     const effective = getEffectiveTheme(t);
     document.documentElement.classList.toggle('dark', effective === 'dark');
-  }, []);
+    notifyNativeTheme(t);
+  }, [notifyNativeTheme]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -66,7 +74,6 @@ export default function App() {
     { key: 'switch', label: '切换' },
     { key: 'sites', label: '站点' },
     { key: 'logs', label: '日志' },
-    { key: 'stats', label: '统计' },
     { key: 'settings', label: '设置' },
   ];
 
@@ -119,7 +126,6 @@ export default function App() {
             {page === 'switch' && <SwitchPage routing={routing} sites={sites} profiles={profiles} onSwitch={refresh} />}
             {page === 'sites' && <SitesPage sites={sites} onRefresh={refresh} />}
             {page === 'logs' && <LogsPage />}
-            {page === 'stats' && <StatsPage />}
             {page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} />}
           </>
         )}
@@ -129,14 +135,42 @@ export default function App() {
 }
 
 function DashboardPage({ routing, sites, onAddSite }: { routing: RoutingCurrent | null; sites: Site[]; onAddSite: () => void }) {
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [days, setDays] = useState('1');
+
+  useEffect(() => {
+    api.getStats(Number(days)).then(setStats).catch(() => {});
+  }, [days]);
+
   return (
     <div className="p-8 space-y-8">
       <h2 className="text-2xl font-semibold tracking-tight">仪表盘</h2>
 
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card title="站点数" value={String(sites.length)} />
         <Card title="活跃Profile" value={routing?.active_profile || '-'} />
         <Card title="路由规则" value={String(routing?.profile?.rules?.length || 0)} />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-medium text-[var(--text-secondary)]">用量统计</h3>
+          <Select
+            value={days}
+            onChange={setDays}
+            options={[
+              { value: '1', label: '今日' },
+              { value: '7', label: '近7天' },
+              { value: '30', label: '近30天' },
+            ]}
+          />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+          <Card title="请求总数" value={String(stats?.total_requests || 0)} />
+          <Card title="输入Tokens" value={formatNumber(stats?.total_input_tokens || 0)} />
+          <Card title="输出Tokens" value={formatNumber(stats?.total_output_tokens || 0)} />
+          <Card title="预估费用" value={formatCost(stats?.total_cost || 0)} />
+        </div>
       </div>
 
       <div>
@@ -146,9 +180,11 @@ function DashboardPage({ routing, sites, onAddSite }: { routing: RoutingCurrent 
           {sites.map(site => (
             <div key={site.id} className="bg-[var(--bg-card)] rounded-2xl p-5 hover:bg-[var(--bg-hover)] transition-colors">
               <div className="flex items-center justify-between mb-3">
-                <span className="font-medium">{site.name}</span>
-                <span className="text-xs px-2.5 py-1 bg-[var(--bg-input)] rounded-lg">{site.protocol}</span>
-              </div>
+                 <span className="font-medium">{site.name}</span>
+                 <div className="flex items-center gap-2">
+                   <span className="text-xs px-2.5 py-1 bg-[var(--bg-input)] rounded-lg">{site.protocol}</span>
+                 </div>
+               </div>
               <p className="text-xs text-[var(--text-muted)] mb-3">{site.base_url}</p>
               <div className="flex flex-wrap gap-1.5">
                 {site.models.map((m: string) => (
@@ -211,16 +247,28 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
   const [newProfileName, setNewProfileName] = useState('');
   const [newRule, setNewRule] = useState({ model_pattern: '', site: '', fallback: '' });
   const [selectedProfile, setSelectedProfile] = useState('');
+  const [addingRule, setAddingRule] = useState(false);
 
-  const activeSite = routing?.profile?.rules?.find((r: Rule) => r.model_pattern === '*')?.site || '';
-
-  const handleSwitch = async (type: 'profile' | 'site', value: string) => {
+  const handleSwitchProfile = async (name: string) => {
     try {
       setSwitching(true);
       setMsg('');
-      if (type === 'profile') await api.switchProfile(value);
-      else await api.switchSite(value);
-      setMsg(`已切换到 ${value}`);
+      await api.switchProfile(name);
+      setMsg(`已切换到 ${name}`);
+      onSwitch();
+    } catch (e: any) {
+      setMsg(`切换失败: ${e.message}`);
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const handleSwitchModelSite = async (model: string, siteId: string) => {
+    try {
+      setSwitching(true);
+      setMsg('');
+      await api.switchModel(model, siteId);
+      setMsg(`${model} 已切换到 ${sites.find(s => s.id === siteId)?.name || siteId}`);
       onSwitch();
     } catch (e: any) {
       setMsg(`切换失败: ${e.message}`);
@@ -257,6 +305,7 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
     try {
       await api.addProfileRule(selectedProfile, newRule);
       setNewRule({ model_pattern: '', site: '', fallback: '' });
+      setAddingRule(false);
       setMsg('规则已添加');
       onSwitch();
     } catch (e: any) {
@@ -274,6 +323,9 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
     }
   };
 
+  const activeProfileRules = routing?.profile?.rules || [];
+  const siteOptions = sites.map(s => ({ value: s.id, label: s.name }));
+
   return (
     <div className="p-8 space-y-8">
       <h2 className="text-2xl font-semibold tracking-tight">切换中心</h2>
@@ -284,33 +336,12 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
 
       <div className="space-y-5">
         <div className="bg-[var(--bg-card)] rounded-2xl p-5">
-          <h3 className="font-medium mb-2">快速切换站点</h3>
-          <p className="text-sm text-[var(--text-muted)] mb-4">将所有请求路由到指定站点</p>
-          <div className="flex flex-wrap gap-2.5">
-            {sites.map(site => (
-              <button
-                key={site.id}
-                onClick={() => handleSwitch('site', site.id)}
-                disabled={switching}
-                className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
-                  site.id === activeSite
-                    ? 'bg-[var(--accent-blue)] text-white'
-                    : 'bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:bg-[var(--bg-hover)]'
-                } disabled:opacity-40`}
-              >
-                {site.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-[var(--bg-card)] rounded-2xl p-5">
           <h3 className="font-medium mb-3">切换 Profile</h3>
           <div className="flex flex-wrap gap-2.5">
             {profiles.map(p => (
               <button
                 key={p.name}
-                onClick={() => handleSwitch('profile', p.name)}
+                onClick={() => handleSwitchProfile(p.name)}
                 disabled={switching}
                 className={`px-4 py-2.5 rounded-xl text-sm transition-all ${
                   routing?.active_profile === p.name
@@ -324,80 +355,160 @@ function SwitchPage({ routing, sites, profiles, onSwitch }: {
           </div>
         </div>
 
-        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-5">
-          <h3 className="font-medium">Profile 管理</h3>
-
-          <div className="flex gap-3 items-end">
-            <div className="flex-1">
-              <Input label="新 Profile 名称" value={newProfileName} onChange={setNewProfileName} placeholder="production" />
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-medium">模型路由</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1">当前 Profile: {routing?.active_profile || '-'}</p>
             </div>
-            <button onClick={handleCreateProfile} className="px-5 py-2.5 bg-green-500 hover:bg-green-400 rounded-xl text-sm text-white transition-colors">
-              创建
+            <button
+              onClick={() => setAddingRule(true)}
+              className="text-xs px-3 py-1.5 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors"
+            >
+              + 添加规则
             </button>
           </div>
 
-          {profiles.map(p => (
-            <div key={p.name} className="bg-[var(--bg-sidebar)] rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{p.name}</span>
-                <div className="flex gap-2">
-                  {routing?.active_profile === p.name && (
-                    <span className="text-xs px-2.5 py-1 bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] rounded-lg">活跃</span>
+          {activeProfileRules.length > 0 ? (
+            <div className="space-y-2.5">
+              {activeProfileRules.map((rule: Rule, idx: number) => (
+                <div key={idx} className="flex items-center gap-3 py-2.5 px-4 bg-[var(--bg-sidebar)] rounded-xl">
+                  <span className="font-mono text-sm text-[var(--accent-blue-text)] shrink-0 min-w-[120px]">{rule.model_pattern}</span>
+                  {rule.model_pattern === '*' && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent-yellow-bg)] text-[var(--accent-yellow-text)] rounded shrink-0">默认兜底</span>
                   )}
-                  <button
-                    onClick={() => handleDeleteProfile(p.name)}
-                    className="text-xs px-2.5 py-1 bg-[var(--accent-red-bg)] text-[var(--accent-red-text)] hover:opacity-80 rounded-lg transition-colors"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-
-              {p.rules.map((rule: Rule, idx: number) => (
-                <div key={idx} className="flex items-center gap-2 text-sm pl-4">
-                  <span className="font-mono text-[var(--accent-blue-text)]">{rule.model_pattern}</span>
-                  <span className="text-[var(--text-muted)]">{'→'}</span>
-                  <span className="px-2.5 py-0.5 bg-[var(--bg-input)] rounded-lg">{rule.site}</span>
-                  {rule.fallback && (
-                    <>
-                      <span className="text-[var(--text-muted)]">fallback:</span>
-                      <span className="px-2.5 py-0.5 bg-[var(--bg-input)] rounded-lg">{rule.fallback}</span>
-                    </>
-                  )}
-                  <button
-                    onClick={() => handleDeleteRule(p.name, idx)}
-                    className="text-xs text-[var(--accent-red-text)] opacity-60 hover:opacity-100 ml-2"
-                  >
-                    x
-                  </button>
+                  <span className="text-[var(--text-muted)] shrink-0">→</span>
+                  <div className="flex-1 min-w-[160px]">
+                    <Select
+                      value={rule.site}
+                      onChange={(v) => handleSwitchModelSite(rule.model_pattern, v)}
+                      options={siteOptions}
+                    />
+                  </div>
                 </div>
               ))}
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--text-muted)] py-4 text-center">当前 Profile 无路由规则</p>
+          )}
 
-              <div className="flex gap-2 items-end pl-4 pt-3 border-t border-[var(--border-subtle)]">
-                <select
-                  value={selectedProfile}
-                  onChange={e => setSelectedProfile(e.target.value)}
-                  className="hidden"
-                >
-                  <option value={p.name}>{p.name}</option>
-                </select>
-                <Input label="模型" value={newRule.model_pattern} onChange={v => setNewRule({ ...newRule, model_pattern: v })} placeholder="gpt-*" />
-                <Select
-                  label="站点"
-                  value={newRule.site}
-                  onChange={v => setNewRule({ ...newRule, site: v })}
-                  options={[{ value: '', label: '选择站点' }, ...sites.map(s => ({ value: s.id, label: s.name }))]}
-                />
-                <Input label="Fallback" value={newRule.fallback} onChange={v => setNewRule({ ...newRule, fallback: v })} placeholder="可选" />
+          {addingRule && (
+            <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] space-y-3">
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <Input label="模型" value={newRule.model_pattern} onChange={v => setNewRule({ ...newRule, model_pattern: v })} placeholder="gpt-*" />
+                </div>
+                <div className="flex-1">
+                  <Select
+                    label="站点"
+                    value={newRule.site}
+                    onChange={v => setNewRule({ ...newRule, site: v })}
+                    options={[{ value: '', label: '选择站点' }, ...siteOptions]}
+                  />
+                </div>
+                <div className="flex-1">
+                  <Input label="Fallback" value={newRule.fallback} onChange={v => setNewRule({ ...newRule, fallback: v })} placeholder="可选" />
+                </div>
                 <button
-                  onClick={() => { setSelectedProfile(p.name); setTimeout(handleAddRule, 0); }}
-                  className="px-4 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 rounded-xl text-sm text-white transition-colors shrink-0"
+                  onClick={() => { setSelectedProfile(routing?.active_profile || ''); setTimeout(handleAddRule, 0); }}
+                  disabled={!newRule.model_pattern || !newRule.site}
+                  className="px-4 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 disabled:opacity-40 rounded-xl text-sm text-white transition-colors shrink-0"
                 >
-                  +
+                  确认
+                </button>
+                <button
+                  onClick={() => { setAddingRule(false); setNewRule({ model_pattern: '', site: '', fallback: '' }); }}
+                  className="px-4 py-2.5 bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] rounded-xl text-sm transition-colors shrink-0"
+                >
+                  取消
                 </button>
               </div>
             </div>
-          ))}
+          )}
+        </div>
+
+        <div className="bg-[var(--bg-card)] rounded-2xl p-5 space-y-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium">Profile 管理</h3>
+            <div className="flex gap-2 items-end">
+              <Input label="" value={newProfileName} onChange={setNewProfileName} placeholder="新 Profile 名称" />
+              <button onClick={handleCreateProfile} disabled={!newProfileName.trim()} className="px-4 py-2.5 bg-green-500 hover:bg-green-400 disabled:opacity-40 rounded-xl text-sm text-white transition-colors shrink-0">
+                创建
+              </button>
+            </div>
+          </div>
+
+          {(() => {
+            const ap = profiles.find(p => p.name === routing?.active_profile);
+            if (!ap) return <p className="text-sm text-[var(--text-muted)]">无活跃 Profile</p>;
+            return (
+              <div className="bg-[var(--bg-sidebar)] rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{ap.name}</span>
+                  <div className="flex gap-2">
+                    <span className="text-xs px-2.5 py-1 bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] rounded-lg">活跃</span>
+                    <button
+                      onClick={() => handleDeleteProfile(ap.name)}
+                      className="text-xs px-2.5 py-1 bg-[var(--accent-red-bg)] text-[var(--accent-red-text)] hover:opacity-80 rounded-lg transition-colors"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+
+                {ap.rules.map((rule: Rule, idx: number) => (
+                  <div key={idx} className="flex items-center gap-2 text-sm pl-4">
+                    <span className="font-mono text-[var(--accent-blue-text)]">{rule.model_pattern}</span>
+                    {rule.model_pattern === '*' && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent-yellow-bg)] text-[var(--accent-yellow-text)] rounded">默认兜底</span>
+                    )}
+                    <span className="text-[var(--text-muted)]">{'→'}</span>
+                    <span className="px-2.5 py-0.5 bg-[var(--bg-input)] rounded-lg">{rule.site}</span>
+                    {rule.fallback && (
+                      <>
+                        <span className="text-[var(--text-muted)]">fallback:</span>
+                        <span className="px-2.5 py-0.5 bg-[var(--bg-input)] rounded-lg">{rule.fallback}</span>
+                      </>
+                    )}
+                    <button
+                      onClick={() => handleDeleteRule(ap.name, idx)}
+                      className="text-xs text-[var(--accent-red-text)] opacity-60 hover:opacity-100 ml-2"
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+
+                {ap.rules.length === 0 && (
+                  <p className="text-xs text-[var(--text-muted)] pl-4">无规则</p>
+                )}
+
+                <div className="flex gap-2 items-end pl-4 pt-3 border-t border-[var(--border-subtle)]">
+                  <select
+                    value={selectedProfile}
+                    onChange={e => setSelectedProfile(e.target.value)}
+                    className="hidden"
+                  >
+                    <option value={ap.name}>{ap.name}</option>
+                  </select>
+                  <Input label="模型" value={newRule.model_pattern} onChange={v => setNewRule({ ...newRule, model_pattern: v })} placeholder="gpt-*" />
+                  <Select
+                    label="站点"
+                    value={newRule.site}
+                    onChange={v => setNewRule({ ...newRule, site: v })}
+                    options={[{ value: '', label: '选择站点' }, ...sites.map(s => ({ value: s.id, label: s.name }))]}
+                  />
+                  <Input label="Fallback" value={newRule.fallback} onChange={v => setNewRule({ ...newRule, fallback: v })} placeholder="可选" />
+                  <button
+                    onClick={() => { setSelectedProfile(ap.name); setTimeout(handleAddRule, 0); }}
+                    className="px-4 py-2.5 bg-[var(--accent-blue)] hover:opacity-90 rounded-xl text-sm text-white transition-colors shrink-0"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -410,8 +521,23 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
   const [form, setForm] = useState({ id: '', name: '', base_url: '', api_key: '', protocol: 'openai', models: '' });
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
+  const [testResults, setTestResults] = useState<Record<string, ConnectivityResult>>({});
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({});
+  const [discoveredModels, setDiscoveredModels] = useState<Record<string, string[]>>({});
+  const [discoveringExpand, setDiscoveringExpand] = useState<Record<string, boolean>>({});
 
   const resetForm = () => setForm({ id: '', name: '', base_url: '', api_key: '', protocol: 'openai', models: '' });
+
+  const handleProtocolChange = (protocol: string) => {
+    setForm({ ...form, protocol });
+  };
+
+  const handleBaseUrlChange = (baseURL: string) => {
+    setForm({ ...form, base_url: baseURL });
+  };
 
   const startAdd = () => {
     resetForm();
@@ -469,6 +595,18 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
     }
   };
 
+  const handleTest = async (id: string) => {
+    try {
+      setTesting(prev => ({ ...prev, [id]: true }));
+      const result = await api.testSite(id);
+      setTestResults(prev => ({ ...prev, [id]: result }));
+    } catch (e: any) {
+      setTestResults(prev => ({ ...prev, [id]: { ok: false, latency_ms: 0, error: e.message } }));
+    } finally {
+      setTesting(prev => ({ ...prev, [id]: false }));
+    }
+  };
+
   return (
     <div className="p-8 space-y-8">
       <div className="flex items-center justify-between">
@@ -493,19 +631,40 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
               <Input label="Site ID" value={form.id} onChange={v => setForm({ ...form, id: v })} placeholder="openai-official" />
             )}
             <Input label="名称" value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="OpenAI 官方" />
-            <Input label="Base URL" value={form.base_url} onChange={v => setForm({ ...form, base_url: v })} placeholder="https://api.openai.com" />
-            <Input label="API Key" value={form.api_key} onChange={v => setForm({ ...form, api_key: v })} placeholder={editSite ? '留空则不修改' : 'sk-...'} type="password" />
+            <Input label="Base URL" value={form.base_url} onChange={handleBaseUrlChange} placeholder="https://api.openai.com" />
+            <div>
+              <label className="block text-xs text-[var(--text-muted)] mb-1.5">API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={form.api_key}
+                  onChange={e => setForm({ ...form, api_key: e.target.value })}
+                  placeholder={editSite ? '留空则不修改' : 'sk-...'}
+                  className="flex-1 px-3.5 py-2.5 bg-[var(--bg-input)] rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]/50 placeholder:text-[var(--text-muted)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="px-3 py-2.5 bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] rounded-xl transition-colors"
+                >
+                  {showApiKey ? (
+                    <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  )}
+                </button>
+              </div>
+            </div>
             <Select
               label="协议"
               value={form.protocol}
-              onChange={v => setForm({ ...form, protocol: v })}
+              onChange={handleProtocolChange}
               options={[
                 { value: 'openai', label: 'OpenAI' },
                 { value: 'anthropic', label: 'Anthropic' },
                 { value: 'gemini', label: 'Gemini' },
               ]}
             />
-            <Input label="模型(逗号分隔)" value={form.models} onChange={v => setForm({ ...form, models: v })} placeholder="gpt-4o,gpt-4o-mini" />
           </div>
           <div className="flex gap-3">
             <button
@@ -530,11 +689,18 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
           <div key={site.id} className="bg-[var(--bg-card)] rounded-2xl p-5 hover:bg-[var(--bg-hover)] transition-colors">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <span className="font-medium">{site.name}</span>
-                <span className="ml-2 text-xs text-[var(--text-muted)]">{site.id}</span>
+                <span className="font-medium text-base">{site.name}</span>
+                <span className="ml-2 text-sm text-[var(--text-muted)]">{site.id}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs px-2.5 py-1 bg-[var(--bg-input)] rounded-lg">{site.protocol}</span>
+                <button
+                  onClick={() => handleTest(site.id)}
+                  disabled={testing[site.id]}
+                  className="text-xs px-2.5 py-1 bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] hover:opacity-80 rounded-lg transition-colors disabled:opacity-40"
+                >
+                  {testing[site.id] ? '测试中...' : '测试'}
+                </button>
                 <button
                   onClick={() => startEdit(site)}
                   className="text-xs px-2.5 py-1 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:opacity-80 rounded-lg transition-colors"
@@ -549,12 +715,96 @@ function SitesPage({ sites, onRefresh }: { sites: Site[]; onRefresh: () => void 
                 </button>
               </div>
             </div>
-            <p className="text-xs text-[var(--text-muted)] mb-2">{site.base_url}</p>
-            <p className="text-xs text-[var(--text-muted)] opacity-50 mb-3">Key: {site.api_key.slice(0, 8)}...{site.api_key.slice(-4)}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {site.models.map((m: string) => (
-                <span key={m} className="text-xs px-2 py-0.5 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] rounded-lg">{m}</span>
-              ))}
+            <p className="text-sm text-[var(--text-muted)] mb-2">{site.base_url}</p>
+            {testResults[site.id] && (
+              <div className={`text-sm px-3 py-1.5 rounded-lg mb-2 ${
+                testResults[site.id].ok
+                  ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)]'
+                  : 'bg-[var(--accent-red-bg)] text-[var(--accent-red-text)]'
+              }`}>
+                {testResults[site.id].ok
+                  ? `✅ 连通  ${testResults[site.id].latency_ms}ms` + (testResults[site.id].models_available ? `  |  可用模型: ${testResults[site.id].models_available}` : '')
+                  : `❌ 失败: ${testResults[site.id].error}`
+                }
+              </div>
+            )}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm text-[var(--text-muted)]">Key:</span>
+              <span className="text-sm font-mono text-[var(--text-muted)]">
+                {revealedKeys[site.id] ? site.api_key : `${site.api_key.slice(0, 8)}...${site.api_key.slice(-4)}`}
+              </span>
+              <button
+                onClick={() => setRevealedKeys(prev => ({ ...prev, [site.id]: !prev[site.id] }))}
+                className="p-1 hover:bg-[var(--bg-hover)] rounded-lg transition-colors"
+              >
+                {revealedKeys[site.id] ? (
+                  <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
+                ) : (
+                  <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                )}
+              </button>
+            </div>
+            <div>
+              <button
+                onClick={() => {
+                  const next = !expandedModels[site.id];
+                  setExpandedModels(prev => ({ ...prev, [site.id]: next }));
+                  if (next && !discoveredModels[site.id]) {
+                    setDiscoveringExpand(prev => ({ ...prev, [site.id]: true }));
+                    api.discoverModels(site.id).then(r => {
+                      setDiscoveredModels(prev => ({ ...prev, [site.id]: r.models.map(m => m.id) }));
+                    }).catch(() => {}).finally(() => {
+                      setDiscoveringExpand(prev => ({ ...prev, [site.id]: false }));
+                    });
+                  }
+                }}
+                className="text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1.5"
+              >
+                <span className="text-xs">{expandedModels[site.id] ? '▼' : '▶'}</span>
+                <span>{site.models.length > 0 ? `${site.models.length} 个模型` : '未配置模型'}</span>
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    setDiscoveringExpand(prev => ({ ...prev, [site.id]: true }));
+                    api.discoverModels(site.id).then(r => {
+                      setDiscoveredModels(prev => ({ ...prev, [site.id]: r.models.map(m => m.id) }));
+                      setExpandedModels(prev => ({ ...prev, [site.id]: true }));
+                    }).catch(() => {}).finally(() => {
+                      setDiscoveringExpand(prev => ({ ...prev, [site.id]: false }));
+                    });
+                  }}
+                  disabled={discoveringExpand[site.id]}
+                  className="text-[10px] px-2 py-0.5 bg-[var(--accent-green-bg)] text-[var(--accent-green-text)] hover:opacity-80 rounded disabled:opacity-40 transition-opacity ml-1"
+                >
+                  {discoveringExpand[site.id] ? '查询中...' : '自动发现'}
+                </button>
+              </button>
+              {expandedModels[site.id] && (
+                <div className="mt-2 space-y-2">
+                  {(discoveredModels[site.id] || site.models).length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(discoveredModels[site.id] || site.models).map((m: string) => (
+                        <span key={m} className="text-xs px-2 py-0.5 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] rounded-lg">{m}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--text-muted)]">暂无模型信息</p>
+                  )}
+                  {discoveredModels[site.id] && JSON.stringify(discoveredModels[site.id]) !== JSON.stringify(site.models) && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.updateSite({ ...site, models: discoveredModels[site.id] });
+                          onRefresh();
+                        } catch {}
+                      }}
+                      className="text-[10px] px-2.5 py-1 bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)] hover:opacity-80 rounded-lg transition-opacity"
+                    >
+                      保存到配置
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -628,39 +878,6 @@ function LogsPage() {
             )}
           </tbody>
         </table>
-      </div>
-    </div>
-  );
-}
-
-function StatsPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [days, setDays] = useState('1');
-
-  useEffect(() => {
-    api.getStats(Number(days)).then(setStats).catch(() => {});
-  }, [days]);
-
-  return (
-    <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold tracking-tight">用量统计</h2>
-        <Select
-          value={days}
-          onChange={setDays}
-          options={[
-            { value: '1', label: '今日' },
-            { value: '7', label: '近7天' },
-            { value: '30', label: '近30天' },
-          ]}
-        />
-      </div>
-
-      <div className="grid grid-cols-4 gap-5">
-        <Card title="请求总数" value={String(stats?.total_requests || 0)} />
-        <Card title="输入Tokens" value={formatNumber(stats?.total_input_tokens || 0)} />
-        <Card title="输出Tokens" value={formatNumber(stats?.total_output_tokens || 0)} />
-        <Card title="预估费用" value={formatCost(stats?.total_cost || 0)} />
       </div>
     </div>
   );
@@ -809,7 +1026,7 @@ function Card({ title, value }: { title: string; value: string }) {
   return (
     <div className="bg-[var(--bg-card)] rounded-2xl p-5">
       <p className="text-xs text-[var(--text-muted)] mb-2">{title}</p>
-      <p className="text-2xl font-semibold">{value}</p>
+      <p className="text-lg sm:text-2xl font-semibold break-all">{value}</p>
     </div>
   );
 }

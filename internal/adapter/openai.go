@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type OpenAIAdapter struct{}
@@ -67,22 +68,77 @@ func (a *OpenAIAdapter) ConvertStreamChunk(chunk []byte) ([]byte, error) {
 	return chunk, nil
 }
 
-func (a *OpenAIAdapter) ParseBalance(body []byte) (*BalanceInfo, error) {
-	var result map[string]interface{}
+func (a *OpenAIAdapter) TestConnectivity(baseURL string, apiKey string) (*ConnectivityResult, error) {
+	url := strings.TrimRight(baseURL, "/") + "/v1/models"
+	start := time.Now()
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return &ConnectivityResult{Ok: false, Error: err.Error()}, nil
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: "unauthorized: invalid API key"}, nil
+	}
+	if resp.StatusCode != 200 {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}, nil
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var modelsResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	json.Unmarshal(body, &modelsResp)
+
+	return &ConnectivityResult{Ok: true, LatencyMs: latency, ModelsAvailable: len(modelsResp.Data)}, nil
+}
+
+func (a *OpenAIAdapter) ListModels(baseURL string, apiKey string) ([]ModelInfo, error) {
+	url := strings.TrimRight(baseURL, "/") + "/v1/models"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data []struct {
+			ID      string `json:"id"`
+			Created int64  `json:"created"`
+		} `json:"data"`
+	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse balance: %w", err)
+		return nil, err
 	}
 
-	info := &BalanceInfo{
-		Currency: "USD",
-		Raw:      string(body),
+	models := make([]ModelInfo, 0, len(result.Data))
+	for _, m := range result.Data {
+		models = append(models, ModelInfo{ID: m.ID, Name: m.ID, Created: m.Created})
 	}
-
-	if total, ok := result["total_available"]; ok {
-		if v, ok := total.(float64); ok {
-			info.Balance = v
-		}
-	}
-
-	return info, nil
+	return models, nil
 }

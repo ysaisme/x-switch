@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type AnthropicAdapter struct{}
@@ -183,9 +184,56 @@ func (a *AnthropicAdapter) ConvertStreamChunk(chunk []byte) ([]byte, error) {
 	}
 }
 
-func (a *AnthropicAdapter) ParseBalance(body []byte) (*BalanceInfo, error) {
-	return &BalanceInfo{
-		Currency: "USD",
-		Raw:      string(body),
-	}, nil
+func (a *AnthropicAdapter) TestConnectivity(baseURL string, apiKey string) (*ConnectivityResult, error) {
+	url := strings.TrimRight(baseURL, "/") + "/v1/messages"
+	start := time.Now()
+
+	payload := map[string]interface{}{
+		"model":      "claude-sonnet-4-20250514",
+		"max_tokens": 1,
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return &ConnectivityResult{Ok: false, Error: err.Error()}, nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: "unauthorized: invalid API key"}, nil
+	}
+	if resp.StatusCode == 400 {
+		return &ConnectivityResult{Ok: true, LatencyMs: latency}, nil
+	}
+	if resp.StatusCode >= 500 {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: fmt.Sprintf("server error: HTTP %d", resp.StatusCode)}, nil
+	}
+
+	return &ConnectivityResult{Ok: true, LatencyMs: latency}, nil
+}
+
+var anthropicKnownModels = []ModelInfo{
+	{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4"},
+	{ID: "claude-haiku-4-20250414", Name: "Claude Haiku 4"},
+	{ID: "claude-opus-4-20250514", Name: "Claude Opus 4"},
+	{ID: "claude-3-5-sonnet-20241022", Name: "Claude 3.5 Sonnet"},
+	{ID: "claude-3-5-haiku-20241022", Name: "Claude 3.5 Haiku"},
+	{ID: "claude-3-opus-20240229", Name: "Claude 3 Opus"},
+}
+
+func (a *AnthropicAdapter) ListModels(baseURL string, apiKey string) ([]ModelInfo, error) {
+	return anthropicKnownModels, nil
 }

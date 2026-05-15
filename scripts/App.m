@@ -1,15 +1,13 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate, NSMenuDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate, NSMenuDelegate, WKScriptMessageHandler>
 @property (strong) NSWindow *window;
 @property (strong) WKWebView *webView;
 @property (strong) NSStatusItem *statusItem;
 @property (copy) NSString *mswitchPath;
 @property (copy) NSString *activeProfile;
-@property (copy) NSString *activeSite;
 @property (strong) NSArray *cachedProfiles;
-@property (strong) NSArray *cachedSites;
 @end
 
 @implementation AppDelegate
@@ -17,9 +15,7 @@
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     self.mswitchPath = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"xswitch"];
     self.cachedProfiles = @[];
-    self.cachedSites = @[];
     self.activeProfile = @"";
-    self.activeSite = @"";
 
     if (![[NSFileManager defaultManager] fileExistsAtPath:self.mswitchPath]) {
         NSAlert *alert = [[NSAlert alloc] init];
@@ -64,6 +60,12 @@
     [editMenu addItemWithTitle:@"全选" action:@selector(selectAll:) keyEquivalent:@"a"];
     editMenuItem.submenu = editMenu;
     [mainMenu addItem:editMenuItem];
+
+    NSMenuItem *windowMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"窗口"];
+    [windowMenu addItemWithTitle:@"关闭" action:@selector(performClose:) keyEquivalent:@"w"];
+    windowMenuItem.submenu = windowMenu;
+    [mainMenu addItem:windowMenuItem];
 
     [NSApp setMainMenu:mainMenu];
 }
@@ -121,33 +123,17 @@
         for (NSDictionary *p in self.cachedProfiles) {
             NSString *name = p[@"name"];
             BOOL isActive = [name isEqualToString:self.activeProfile];
-            NSString *title = isActive ? [NSString stringWithFormat:@"● %@", name] : [NSString stringWithFormat:@"    %@", name];
-            NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(switchProfile:) keyEquivalent:@""];
+            NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(switchProfile:) keyEquivalent:@""];
             item.representedObject = name;
             item.target = self;
             if (isActive) {
-                item.state = NSControlStateValueOn;
-            }
-            [menu addItem:item];
-        }
-        [menu addItem:[NSMenuItem separatorItem]];
-    }
-
-    if (self.cachedSites.count > 0) {
-        NSMenuItem *siteHeader = [[NSMenuItem alloc] initWithTitle:@"快速切换站点" action:nil keyEquivalent:@""];
-        siteHeader.enabled = NO;
-        [menu addItem:siteHeader];
-
-        for (NSDictionary *s in self.cachedSites) {
-            NSString *siteId = s[@"id"];
-            NSString *siteName = s[@"name"];
-            BOOL isActive = [siteId isEqualToString:self.activeSite];
-            NSString *title = isActive ? [NSString stringWithFormat:@"● %@", siteName] : [NSString stringWithFormat:@"    → %@", siteName];
-            NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(switchSite:) keyEquivalent:@""];
-            item.representedObject = siteId;
-            item.target = self;
-            if (isActive) {
-                item.state = NSControlStateValueOn;
+                NSDictionary *attrs = @{
+                    NSFontAttributeName: [NSFont boldSystemFontOfSize:14],
+                    NSForegroundColorAttributeName: [NSColor controlAccentColor]
+                };
+                item.attributedTitle = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"● %@", name] attributes:attrs];
+            } else {
+                item.title = [NSString stringWithFormat:@"    %@", name];
             }
             [menu addItem:item];
         }
@@ -177,17 +163,6 @@
     [self fetchJSON:@"/api/v1/routing/current" completion:^(NSDictionary *data) {
         if (data) {
             self.activeProfile = data[@"active_profile"] ?: @"";
-            self.activeSite = @"";
-            NSDictionary *profile = data[@"profile"];
-            if (profile) {
-                NSArray *rules = profile[@"rules"] ?: @[];
-                for (NSDictionary *rule in rules) {
-                    if ([rule[@"model_pattern"] isEqualToString:@"*"]) {
-                        self.activeSite = rule[@"site"] ?: @"";
-                        break;
-                    }
-                }
-            }
         }
         dispatch_group_leave(group);
     }];
@@ -196,14 +171,6 @@
     [self fetchJSON:@"/api/v1/profiles" completion:^(NSDictionary *data) {
         if (data) {
             self.cachedProfiles = data[@"profiles"] ?: @[];
-        }
-        dispatch_group_leave(group);
-    }];
-
-    dispatch_group_enter(group);
-    [self fetchJSON:@"/api/v1/sites" completion:^(NSDictionary *data) {
-        if (data) {
-            self.cachedSites = data[@"sites"] ?: @[];
         }
         dispatch_group_leave(group);
     }];
@@ -264,12 +231,6 @@
     [self postSwitch:@{@"profile": name}];
 }
 
-- (void)switchSite:(NSMenuItem *)sender {
-    NSString *siteId = sender.representedObject;
-    if (!siteId) return;
-    [self postSwitch:@{@"site": siteId}];
-}
-
 - (void)openMainWindow:(NSMenuItem *)sender {
     if (!self.window) {
         [self setupWindow];
@@ -302,6 +263,7 @@
     self.window.movableByWindowBackground = YES;
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    [config.userContentController addScriptMessageHandler:self name:@"themeChange"];
     self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
     self.webView.navigationDelegate = self;
     self.window.contentView = self.webView;
@@ -387,6 +349,27 @@
         [self.window makeKeyAndOrderFront:nil];
     }
     return YES;
+}
+
+#pragma mark - WKScriptMessageHandler
+
+- (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
+    if ([message.name isEqualToString:@"themeChange"]) {
+        NSString *theme = message.body;
+        if ([theme isKindOfClass:[NSString class]]) {
+            [self updateWindowAppearance:theme];
+        }
+    }
+}
+
+- (void)updateWindowAppearance:(NSString *)theme {
+    if ([theme isEqualToString:@"dark"]) {
+        self.window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    } else if ([theme isEqualToString:@"light"]) {
+        self.window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    } else {
+        self.window.appearance = nil;
+    }
 }
 
 #pragma mark - WKNavigationDelegate

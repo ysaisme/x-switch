@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type GeminiAdapter struct{}
@@ -201,9 +202,83 @@ func (a *GeminiAdapter) ConvertStreamChunk(chunk []byte) ([]byte, error) {
 	return []byte("data: " + string(b) + "\n\n"), nil
 }
 
-func (a *GeminiAdapter) ParseBalance(body []byte) (*BalanceInfo, error) {
-	return &BalanceInfo{
-		Currency: "USD",
-		Raw:      string(body),
-	}, nil
+func (a *GeminiAdapter) TestConnectivity(baseURL string, apiKey string) (*ConnectivityResult, error) {
+	url := strings.TrimRight(baseURL, "/") + "/v1beta/models?key=" + apiKey
+	start := time.Now()
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return &ConnectivityResult{Ok: false, Error: err.Error()}, nil
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 400 || resp.StatusCode == 403 {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: "unauthorized: invalid API key"}, nil
+	}
+	if resp.StatusCode != 200 {
+		return &ConnectivityResult{Ok: false, LatencyMs: latency, Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}, nil
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var modelsResp struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	json.Unmarshal(body, &modelsResp)
+
+	return &ConnectivityResult{Ok: true, LatencyMs: latency, ModelsAvailable: len(modelsResp.Models)}, nil
+}
+
+func (a *GeminiAdapter) ListModels(baseURL string, apiKey string) ([]ModelInfo, error) {
+	url := strings.TrimRight(baseURL, "/") + "/v1beta/models?key=" + apiKey
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Models []struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"displayName"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	models := make([]ModelInfo, 0, len(result.Models))
+	for _, m := range result.Models {
+		id := m.Name
+		if strings.HasPrefix(id, "models/") {
+			id = strings.TrimPrefix(id, "models/")
+		}
+		name := m.DisplayName
+		if name == "" {
+			name = id
+		}
+		models = append(models, ModelInfo{ID: id, Name: name})
+	}
+	return models, nil
 }

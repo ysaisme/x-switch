@@ -15,6 +15,11 @@ import (
 	"github.com/ysaisme/x-switch/internal/store"
 )
 
+type modelResult struct {
+	models []adapter.ModelInfo
+	err    error
+}
+
 type ChatRequest struct {
 	Model    string          `json:"model"`
 	Messages json.RawMessage `json:"messages"`
@@ -225,13 +230,38 @@ func (p *Proxy) HandleModels(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 
 	for _, site := range cfg.Sites {
-		for _, m := range site.Models {
-			models = append(models, Model{
-				ID:      m,
-				Object:  "model",
-				Created: now,
-				OwnedBy: site.ID,
-			})
+		if len(site.Models) > 0 {
+			for _, m := range site.Models {
+				models = append(models, Model{
+					ID:      m,
+					Object:  "model",
+					Created: now,
+					OwnedBy: site.ID,
+				})
+			}
+		} else {
+			adp := adapter.GetAdapter(site.Protocol)
+			ch := make(chan modelResult, 1)
+			go func() {
+				discovered, err := adp.ListModels(site.BaseURL, site.APIKey)
+				ch <- modelResult{models: discovered, err: err}
+			}()
+			select {
+			case res := <-ch:
+				if res.err != nil {
+					continue
+				}
+				for _, m := range res.models {
+					models = append(models, Model{
+						ID:      m.ID,
+						Object:  "model",
+						Created: now,
+						OwnedBy: site.ID,
+					})
+				}
+			case <-time.After(10 * time.Second):
+				continue
+			}
 		}
 	}
 
